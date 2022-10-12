@@ -1,0 +1,195 @@
+=================================================================== GitLab =======================================================
+
+# Gitlab is a service that provides remote access to Git repositories.
+# You can install the GitLab runner on different operating systems,
+
+# we will cover the installation on windows.
+ − First create a folder called 'GitLab-Runner' in your system. For instance, you can create in C drive as C:\GitLab-Runner.
+ - Now download the binary for x86 or amd64 and copy it in the folder created by you. Rename the downloaded binary to gitlab-runner.exe.
+ - Open the command prompt and navigate to your created folder. Now type the below command and press enter.
+ -> C:\GitLab-Runner> gitlab-runner.exe register
+ − After running the above command, it will ask to enter the gitlab-ci coordinator URL.
+ - Enter the gitlab-ci token for the runner.
+ - To get the token, login to your GitLab account:
+   * go to your project.
+   * Click on the CI/CD option under Settings tab and expand the Runners Settings option.
+   * Under Runners Settings section, you will get the token.
+ − Enter the gitlab-ci description for the runner.
+ − It will ask to enter the gitlab-ci tags for the runner. we are going to use tag1, tag2
+ − You can lock the Runner to current project by setting it to true value.
+ − Now enter the Runner executor for building the project. we will use ===> docker
+ − Next it will ask for default image to be set for docker selector. we will used ==> alpine:latest
+ − Now go to your project, click on the CI/CD option under Settings section and you will see the activated Runners for the project.
+ - You can see the GitLab Runner configuration in the config.toml file under the GitLab-Runner folder
+
+# for Mac we will use brew command as below
+$ brew install gitlab-runner
+$ brew services start gitlab-runner 
+
+# there's another way to use gitlab, by using docker container --> this approach had been tested in mac
+
+sudo docker run --detach --name gitlab \
+--hostname gitlab.example.com \
+--publish 30080:30080 \
+--publish 30022:22 \
+--env GITLAB_OMNIBUS_CONFIG="external_url 'http://gitlab.example.com:30080'; gitlab_rails['gitlab_shell_ssh_port']=30022;" \
+gitlab/gitlab-ce:latest
+
+
+# after building gitlab server, now we need to create ssh key so anytime we need to connect to the server we will not need to provise creds.
+$ ssh-keygen
+
+# after submit the command above it will prompt u to give the folder name, make sure that u save the key in a file
+# now go to gitlab --> setting --> SSH Keys --> copy the ssh key from the created file to the highlighted space --> add key.
+
+# to create a new project --> click on the New project button in the dashboard --> git the repo a clear name.
+# now u may or may not need all the command below, but i will list all required commands from this step till the local repo will sync with remote repo.
+
+# Create a new repository:
+ - git clone ssh://git@gitlab.example.com:30022/mustafakamil/my-first-gitlab-proj.git 
+ - cd my-first-gitlab-proj 
+ - touch README.md 
+ - git add README.md 
+ - git commit -m "add README" 
+ - git push -u origin master
+
+# Push an existing folder:
+ - cd existing_folder 
+ - git init 
+ - git remote add origin ssh://git@gitlab.example.com:30022/mustafakamil/my-first-gitlab-proj.git 
+ - git add . 
+ - git commit -m "Initial commit" 
+ - git push -u origin master
+
+# Push an existing Git repository
+ - cd existing_repo 
+ - git remote rename origin old-origin 
+ - git remote add origin ssh://git@gitlab.example.com:30022/mustafakamil/my-first-gitlab-proj.git 
+ - git push -u origin --all 
+ - git push -u origin --tags
+
+# to fork a project --> go to the project --> click on fork --> add the forked project to a fork group by clicking on it.
+
+# how to Creating a Branch in gitlab:
+ - Login to your GitLab account and go to your project under Projects section
+ - To create a branch, click on the Branches option under the Repository section and click on the New branch button.
+ − In the New branch screen, enter the name for branch and click on the Create branch button
+
+# we have 2 options to add file in the gitlab
+ - web interface.
+ - command line.
+
+# let's explain how to work with web interface, coz the command line way already had been discussed early:
+ − You can create a new file, by clicking on the '+' button which is at the right side of the branch selector in the dashboard.
+ − Enter the file name, add some content in the editor section and click on the Commit changes button to create the file.
+
+# Steps for Rebase Operation:
+ − Go to your project directory and create a new branch with the name rebase-example by using the git checkout command.
+  <The flag -b indicates new branch name.>
+ - Now, create a new file and add some content to that file as shown below.
+  $ echo "Welcome to TutorilasPoint" >> rebase_file.md
+ - Add the new file to working directory and store the changes to the repository along with the message (by using the git commit command).
+ - Switch to the 'master' branch. by using the git checkout command.
+ − Next, create an another new file, add some content to that file and commit it in the master branch. 
+  $ echo "text in main branch" >> README.md
+
+ − Switch to the rebase-branch to have the commit of master branch.
+ - Now, you can combine the commit of master branch to rebase-branch by using the git rebase command  
+  $ git rebase master
+
+# we'll talk about Squashing commit
+#Squashing is a way of combining all commits into one when you are obtaining a merge request.
+
+# Steps for squashing commits
+ − Go to your project directory and check out a new branch with the name squash-chapter by using the git checkout command.
+  $ git checkout -b squash-chapter
+ − Now, create a new file with two commits, add that file to working directory and store the changes to the repository along with the commit messages
+
+  $ echo "message1" >> README.md
+  $ git add .
+  $ git commit -am "message1 commited"
+
+  $ echo "message2" >> README.md
+  $ git add .
+  $ git commit -am "message2 commited"
+
+ - u can use <git history> to see the preivous commits, and u'll get the below result in my example
+
+ ~/Desktop/my-first-gitlab-proj$ git history
+ * 3c17c2d (HEAD -> squash-chapter) message2 commited
+ * 9a80a57 message1 commited
+ | * cd640d5 (rebase-example) Rebase file added
+ |/
+
+ − Now, squash the above two commits into one commit by using the below command
+  $ git rebase -i HEAD~2
+
+  -> git rebase command is used to integrate changes from one branch to another and HEAD~2 specifies last two squashed commits and if you want to squash four commits, then you need to write as HEAD~4. One more important point is, you need atleast two commits to complete the squash operation.
+
+ - After entering the above command, it will open the editor in which you have to change the pick word to squash word in the second line (you need to squash this commit).
+
+----------------------------------------------------------------Gitlab CI/CD----------------------------------------------------
+
+# gitlab CI is the next wave of CI/CD, early we where use sperate application like jenkins to do the CI/CD
+# we will cover the subjects below:
+https://www.youtube.com/watch?v=34u4wbeEYEo&list=PLaFCDlD-mVOlnL0f9rl3jyOHNdHU--vlJ
+ - High level architecture
+ - Docker  ---> already explained in docker
+ - gitlab runner
+ - gitlab registry
+ - create demo application
+ - ci/cd using plain ssh (not dockerized approach)
+ - ci/cd using runner shell executer
+ - ci/cd using runner docker executer
+
+# let's imagin that we have 2 parts in our work environment 
+ - gitlab property
+ - personel
+
+            			 						    .------.
+            								    	|GitLab|
+            			.------------->	.------. <------------.
+        	       /					         |				           \
+        	      v                    |                    v 
+        		.------. 					       |				      	.------.
+        		|Runner|					       |					      |Runner|
+  Personel	.------.					       |					      .------. shared
+      			|Docker|					       |					      |Docker|
+      			.------.					       |					      .------.
+    				   ^                     |                   ^
+      			    \                    v                  /
+      					 .------------>	.--------. <----------.
+            									   |Registry|
+      			             			   .--------.
+
+# u can see there's only one way line from gitlab toward registry, that's because gitlab use registry to fetch what image that we have.
+# image built in docker / runner and pushed to registry not to gitlab.
+
+# if u r going to run docker <pure> some time in the image document there's away to copy the content of current folder to the target docker, for ex u can create index.html and copy it to the docker image :)
+
+ > <command> + -v "$pwd":<target>
+
+# example on building docker custom image 
+ FROM ubuntu:latest
+ apt-get -y update
+ apt-get -y install appache2
+ EXPOSE 80
+ CMD apachectl -D FORGROUND
+
+# to run gitlab-runner use
+ $ sudo gitlab-runner --help
+ $ sudo gitlab-runner register
+  - it will ask u about the coordinator, for ex > https://gitlab.com/
+ > get the token from the gitlab 
+ > the a description
+ > for gitlab tags, is u have these tags, 
+  stage,qa,build,deploy
+ > wether to run untagged builds  --> false
+ > executer --> shell
+
+# now to check our work go to the gitlab site --> settings --> Runners --> active runner :)
+ 
+
+
+
+================================================================ End of GitLab ===================================================
