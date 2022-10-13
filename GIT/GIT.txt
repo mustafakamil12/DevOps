@@ -22,16 +22,16 @@ $ git help
 $ git help <command>
 
 # to start new project with git u need to create new folder 
-$mkdir <name>
+    > mkdir <name>
 
 # to create new repository in the project folder
-$ git init
+    > git init
 
 # to view the hidden repository in a directory 
-$ ls -al
+    > ls -al
 
 # to see changes and the commits in a repo, to verify the status of git project
-$ git status
+    > git status
 
 # at the beginning all files will be not been added to the git project yet.
 
