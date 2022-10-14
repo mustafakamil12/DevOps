@@ -178,10 +178,10 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
         > git pull origin <branch>
 
      - to pull from unrelated branches. there will be issue if unrelated history and to resolve this.
-        > git pull origin master --allow-unrelated-histories 
+        > git pull origin main --allow-unrelated-histories 
 
      -push the changes from local repo to GitHub
-        > git push origin master
+        > git push origin main
      
      -we need to keep our local repo up to date with centralized repo.
 
@@ -207,7 +207,7 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
 # BRANCHING:
 -----------
 
-# The idea of branching is work with many features at the same time, without changing code in the master untill test it and approve it then merge the feature branch with master later.
+# The idea of branching is work with many features at the same time, without changing code in the main untill test it and approve it then merge the feature branch with main later.
 
 # to create new branch/feature <which is only a pointer not a real repo> use the following command
     $ git branch <branch name> OR git checkout -b <branch name>
@@ -223,7 +223,7 @@ $ git branch
 # to list all branches in the git as well the remote repo and branches.
 $ git branch -a 
 
-# file created in a branch <not master> will not been seen in master until merge.
+# file created in a branch <not main> will not been seen in main until merge.
 
 # if u wanna to push the content of a branch to GitHub please push it to a branch, even if it's not exist in the GitHub yet.
 
@@ -233,14 +233,14 @@ $ git branch -d <branch name>
 # if u wanna to rename the branch
 $ git branch -m <old branch name> <new branch name>
 
-# after ensure that everything in the branch is ok u can merge the branch with master.
+# after ensure that everything in the branch is ok u can merge the branch with main.
 
 # Merging:
 ----------
 # after working with differnt features, we need to combine the develped codes, bug fix, changes ... etc, into our main code.
 
-# to merge with a specific branch for ex master, u need:
-    i. git checkout to the master/or any other branch or feature.
+# to merge with a specific branch for ex main, u need:
+    i. git checkout to the main/or any other branch or feature.
     ii. git merge <branch name>  <-- if only move commits from branch to another u can see <Fast-forward just move the pointer>
     iii. git push origin <branch name>   <--- GitHub
 
@@ -346,7 +346,7 @@ $ git merge <branch1> -m "Some Text"
 
 # REBASE:
 ---------
-# we will deal with another approach here which is rebase, although both rebase and merge look like doing the same job, take commits from feature branch to master branch.
+# we will deal with another approach here which is rebase, although both rebase and merge look like doing the same job, take commits from feature branch to main branch.
 # in merge it will take all commits and kind of stuff them in 1 merge commit like below example:
 
 *   b61ab3c Merge branch 'mustafa-update' into html-update  <-- one merge commit
@@ -356,25 +356,25 @@ $ git merge <branch1> -m "Some Text"
 * | 7590134 second attempt on branch html-update
 * | 72dbae8 first update testPage.html in branch html-update
 |/
-* d1223eb (origin/master, master) create testPage.html
+* d1223eb (origin/main, main) create testPage.html
 
-# instead in rebase it take your commits in the feature branch and move them to the top of the master commits.
+# instead in rebase it take your commits in the feature branch and move them to the top of the main commits.
 
-# in another word git rebase is re-writing the project history by creating brand new commits for each commit, so it's move the entire feature branch to beginning on the top of the master branch.
+# in another word git rebase is re-writing the project history by creating brand new commits for each commit, so it's move the entire feature branch to beginning on the top of the main branch.
 
 # so rebasing is changing the base of your branch from one commit to another making it appear as if you'd created your branch from a different commit.
 
 # steps need to work with rebase:
-    i. must sure local master repos sync with remote master repo 
-    ii. need to be in master and rung
+    i. must sure local main repos sync with remote main repo 
+    ii. need to be in main and run
         > git pull
     
     iii. u can create new branch by using 
         > git checkout -b <branch name/any name>
     iv. now add your commits, let say you add couple commits after develop or update some file.
-    v. after you are done with all developing you need to check out to the master branch 
-        > git checkout master
-    vi. at the sametime that u start develping ur branch, the remote master branch had been updated as well so u need to sync with master again.
+    v. after you are done with all developing you need to check out to the main branch 
+        > git checkout main
+    vi. at the sametime that u start develping ur branch, the remote main branch had been updated as well so u need to sync with main again.
         > git pull
     vii. so in this case we will be at least one commit behined, like the figure below:
         
@@ -387,8 +387,8 @@ $ git merge <branch1> -m "Some Text"
 
     viii. in this case check out to ur branch 
         > git checkout <ur branch name/feature branch>
-    ix. do rebase against the master
-        > git rebase master 
+    ix. do rebase against the main
+        > git rebase main 
 
           O
           |
@@ -398,8 +398,8 @@ $ git merge <branch1> -m "Some Text"
         O
         |
         O
-    x. now check out to master again
-        > git checkout master
+    x. now check out to main again
+        > git checkout main
     xi. and rebase aginst your branch or feature branch.
         > git rebase <my branch/feature branch>
 
@@ -448,41 +448,41 @@ $ git rebase --skip
 
 # take a look on the example below:
     
-    origin/master:
+    origin/main:
     A -- B -- C -- D
     local branch:
     A -- B -- E -- F -- G
 
-# u'll see this message <Your branch and 'origin/master' have diverged, and have 3 and 2 different commits each ...>.
+# u'll see this message <Your branch and 'origin/main' have diverged, and have 3 and 2 different commits each ...>.
 
 # from the graph above u can see the diverged happen after changes B
 
-# we have 2 different commits in origin/master (C,D)
+# we have 2 different commits in origin/main (C,D)
 # we have 3 different commits in local (E,F,G)
 
-# The cause of this issue: This typically happens when you are trying to merge your changes to ‘origin/master’ and someone else in your team pushed some other changes after you sync with ‘origin/master’ and before you merge your changes.
+# The cause of this issue: This typically happens when you are trying to merge your changes to ‘origin/main’ and someone else in your team pushed some other changes after you sync with ‘origin/main’ and before you merge your changes.
 
 # there's 2 ways to resolve this issue:
 
     - rebase
-        > git pull --rebase origin master. and result will be
+        > git pull --rebase origin main. and result will be
             
-            origin/master:
+            origin/main:
             A -- B -- C -- D
             local branch:
             A -- B -- C -- D -- E -- F -- G
         
     -merge
-        > git merge origin master
+        > git merge origin main
 
-            origin/master:
+            origin/main:
             A -- B -- C -- D
             local branch:
                       .-- C -- D ----- .  
             A -- B --|                 |-- H
                       .-- E -- F -- G -.   
 
-# this phrase (HEAD -> master, origin/master, origin/HEAD) mean both local and remote repo in sync.
+# this phrase (HEAD -> main, origin/main, origin/HEAD) mean both local and remote repo in sync.
 
 
 # CHANGE STASH:
