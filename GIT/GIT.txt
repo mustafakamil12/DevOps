@@ -210,28 +210,28 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
 # The idea of branching is work with many features at the same time, without changing code in the main untill test it and approve it then merge the feature branch with main later.
 
 # to create new branch/feature <which is only a pointer not a real repo> use the following command
-    $ git branch <branch name> OR git checkout -b <branch name>
+    > git branch <branch name> OR git checkout -b <branch name>
     ex: 
-    $ git branch mustafa-lbaas
+    > git branch mustafa-lbaas
 
 # now to switch to the new branch/feature <after creating new branch>
-$ git checkout <branch name>
+    > git checkout <branch name>
 
 # to view branches in git
-$ git branch
+    > git branch
 
 # to list all branches in the git as well the remote repo and branches.
-$ git branch -a 
+    > git branch -a 
 
 # file created in a branch <not main> will not been seen in main until merge.
 
 # if u wanna to push the content of a branch to GitHub please push it to a branch, even if it's not exist in the GitHub yet.
 
 # to delete branch from git locally, u need first not to be in this branch
-$ git branch -d <branch name>
+    > git branch -d <branch name>
 
 # if u wanna to rename the branch
-$ git branch -m <old branch name> <new branch name>
+    > git branch -m <old branch name> <new branch name>
 
 # after ensure that everything in the branch is ok u can merge the branch with main.
 
