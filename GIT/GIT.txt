@@ -98,11 +98,12 @@ $ git help <command>
 
 # if u wanna to find changes that been done for a specific file
     > git log -- <file name>
+    > git log -- index.html --oneline --graph --all  <-- example
 
 # now if u wanna to get details about any commit
     > git show <commit id, even the first 7 chars>
 
-# to create alias for any long command <to make long command short>s
+# to create alias for any long command <to make long command short>
     > git config --global alias.<name> "command options"
     > git <alias name>  <-- how to use alias
     > git config --global alias.history "log --all --graph --decorate --oneline"  <== to use this alias $ git history
@@ -157,50 +158,51 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
 ------
 
 # if u wanna to see the changes between ur repo area and ur working area, in another word the difference between local repo and local working area
-$ git diff
+    > git diff
 
 # now to view the changes between staging area and repo
-$ git diff --staged
+    > git diff --staged
 
 # if u need to delete file in git, remove it from the working area using rm <file name>, or
-$ git rm <file name>  --> if we using this command we will skip the next command since it will be staged already, we need to commit directly. 
-$ git add .
-$ git commit -m "message" 
+    > git rm <file name>  --> if we using this command we will skip the next command since it will be staged already, we need to commit directly. 
+    > git add .
+    > git commit -m "message" 
 
-# if u wanna to create a centralized repo in git hub
- -create new repo in GitHub
- -create new work area in ur computer
- -initialize the new work are using git init
- -copy the GitHub url using <clone>
- $ git remote add origin "GitHub url"
- -pull the changes from the GitHub
- $ git pull origin <branch>
+# if u wanna to create a centralized repo in github
+    -create new repo in GitHub
+    -create new work area in ur computer
+    -initialize the new work are using git init
+    -copy the GitHub url using <clone>
+        > git remote add origin "GitHub url"
+     -pull the changes from the GitHub
+        > git pull origin <branch>
 
- - to pull from unrelated branches. there will be issue if unrelated history and to resolve this.
- # git pull origin master --allow-unrelated-histories 
+     - to pull from unrelated branches. there will be issue if unrelated history and to resolve this.
+        > git pull origin master --allow-unrelated-histories 
 
- -push the changes from local repo to GitHub
- $ git push origin master
- -we need to keep our local repo up to date with centralized repo.
+     -push the changes from local repo to GitHub
+        > git push origin master
+     
+     -we need to keep our local repo up to date with centralized repo.
 
 
 # to compare a specific file between working area and staging area.
-$ git diff <file name>
+    > git diff <file name>
 
-# to compare the changes between working area and repo
-$ git diff HEAD <file name > <--- file name is optional
+# to compare the changes between working/staging area and repo
+    > git diff HEAD <file name > <--- file name is optional
 
 # to compare the changes between staging area and repo
-$ git diff --staged HEAD <file name>
+    > git diff --staged HEAD <file name>
 
 # to compare the changes between 2 commits
-$ git diff <commit id 1> <commit id 2>
+    > git diff <commit id 1> <commit id 2>
 
 # to compare the changes between the last commit and -1 the last commit <previous the last commit>
-$ git diff HEAD HEAD^
+    > git diff HEAD HEAD^
 
 # to find difference between branch and another branch
-$ git diff <branch1> <branch2>
+    > git diff <branch1> <branch2>
 
 # BRANCHING:
 -----------
