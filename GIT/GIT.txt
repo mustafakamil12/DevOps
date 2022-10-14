@@ -286,7 +286,7 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
         - resovle the conflict and then try to merge again
 
 
-# one of good scenarios in real, that we have 2 engineers develop the same file and the same line, both push the new update to remote repo (github), when merging the first engineer dev. it will be accepted without any issue, but when trying to merge the second engineer dev. we will got conflict.
+# (Remotely) one of good scenarios in real, that we have 2 engineers develop the same file and the same line, both push the new update to remote repo (github), when merging the first engineer dev. it will be accepted without any issue, but when trying to merge the second engineer dev. we will got conflict.
     
     - in the main branch create new file with name <feature>
     - create new branch with name <feature1>
@@ -294,7 +294,7 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
     - create new branch with name <feature2>
     - in feature2 add in the first line in feature file [feature2] and save it, add and commit.
     - now push feature1 to origin feature1
-    - pust feature2 to origin feature2 
+    - push feature2 to origin feature2 
 
     - create new PR to merge feature1 with main
     - create new PR to merge feature2 with main
@@ -304,7 +304,7 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
     - use web eiditor it's like the VSCode, edit what you want and --> mark as resolved --> commit merge --> merge pull request 
     - commit merge
 
-# repeat the scenario above but with feature3 and feature4
+# (Locally) repeat the scenario above but with feature3 and feature4
     - we have a choice not to resovle the conflict using github web editor instead we will
     - merge main branch into feature4 (reverse merging)
         > git checkout main
@@ -325,7 +325,7 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
 -------------------------
 
     i. create a feature branch
-    ii. upload feature branch to github.
+    ii. upload feature branch to github following the steps below:
         - create repo in github.
         - copy url
         - change master branch name to main branch using:
@@ -369,6 +369,8 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
 * | 72dbae8 first update testPage.html in branch html-update
 |/
 * d1223eb (origin/main, main) create testPage.html
+
+# so u can see all commits in the feature had been represent in one commit in the main branch.
 
 # instead in rebase it take your commits in the feature branch and move them to the top of the main commits.
 
