@@ -247,7 +247,19 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
 # the result of merging process will to the branch u r currently working on 
 
 #if u wanna to add message with merge process
-$ git merge <branch1> -m "Some Text"
+    > git merge <branch1> -m "Some Text"
+
+# so in merge it will reduce all feature comments in one comment at merging step
+
+    *   a99ff0c (origin/master) merge successfully
+    |\
+    | * da057e7 f2
+    | * 3377a39 f1
+    | | 6d6dfe3 m3
+    |/
+    * 8504b96 m2
+    * 2ff930b m1
+
 
 # MERGE CONFLICTS:
 -----------------
