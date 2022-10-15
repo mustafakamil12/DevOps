@@ -370,11 +370,11 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
 |/
 * d1223eb (origin/main, main) create testPage.html
 
-# so u can see all commits in the feature had been represent in one commit in the main branch.
+# so u can see all commits in the feature had been represented (reduced) by one commit in the main branch.
 
 # instead in rebase it take your commits in the feature branch and move them to the top of the main commits.
 
-# in another word git rebase is re-writing the project history by creating brand new commits for each commit, so it's move the entire feature branch to beginning on the top of the main branch.
+# in another word git rebase is re-writing the project history by creating brand new commits for each commit, so it's move the entire feature branch commits to beginning on the top of the main branch.
 
 # so rebasing is changing the base of your branch from one commit to another making it appear as if you'd created your branch from a different commit.
 
@@ -414,7 +414,7 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
         O
     x. now check out to main again
         > git checkout main
-    xi. and rebase aginst your branch or feature branch.
+    xi. final step is to rebase aginst your branch or feature branch.
         > git rebase <my branch/feature branch>
 
         | 
@@ -427,7 +427,8 @@ $ git config --global -e   <-- it's mean that i wanna to edit the config file fo
         O
         |
         O
-    xii. finally u need to push from ur local to remote
+    
+
         > git push
 
 # to rebase for a n number of commits back.
@@ -540,7 +541,7 @@ $ git stash pop
 # after revert changes from the stash u need to drop it, otherwise it will confuse u. 
     - if u wanna to drop a specific stash:
         > git stash drop stash@{index#}
-        > git stash drop  <-- will drop latest stash
+        > git stash drop  <-- will drop latest stash --> stash@{0}
 
     - if u wanna to drop all stashes:
         > git stash clear
