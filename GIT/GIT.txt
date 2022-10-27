@@ -1,6 +1,8 @@
 ===============================================================Start Of Git Phase=================================================
 
-# git is tool and GitHub is the remote repository 
+# git is free and open source software for distributed version control: tracking changes in any set of files, usually used for coordinating work among programmers collaboratively developing source code during software development
+
+# github is a Git repository hosting service that provides a web-based graphical interface. 
 
 # to change the git configuration file
 $ git config  --> it will show all commands that can be used with it :)
