@@ -1,0 +1,773 @@
+
+===============================================================Start Of Git Phase=================================================
+
+# git is free and open source software for distributed version control: tracking changes in any set of files, usually used for coordinating work among programmers collaboratively developing source code during software development
+
+# github is a Git repository hosting service that provides a web-based graphical interface. 
+
+# to change the git configuration file
+$ git config  --> it will show all commands that can be used with it :)
+
+
+# to set the name in configuration file of git 
+$ git config --global user.name "Al Ogaidi, Mustafa"
+
+# to set the email in configuration file of git
+$ git config --global user.email "godric.phoenix@gmail.com"
+
+# to get a list of different configuration command for git 
+$ git config --list
+
+# to get help on git
+$ git help
+
+# to get help on a specific command
+$ git help <command>
+
+# to start new project with git u need to create new folder 
+    > mkdir <name>
+
+# to create new repository in the project folder
+    > git init
+
+# to view the hidden repository in a directory 
+    > ls -al
+
+# to see changes and the commits in a repo, to verify the status of git project
+    > git status
+
+# at the beginning all files will be not been added to the git project yet.
+
+# all files been <Untracked files> in red color at the begining.
+
+# to add <Untracked files> in the working area to staging area 
+    > git add .
+
+
+# after using the command above u will see this phrase <Changes to be committed> and file(s) in green color.
+
+# to add any changes to the staging area use:
+    > git add .
+
+# to add changes in a specific file 
+    > git add <file name>
+
+# to commit changes, (-m  ==> message)
+    > git commit -m "any text used to be message"
+
+# after using the command above is u use git status u will get this message <nothing to commit, working tree clean>
+
+# if we do any changes to the file above like adding some text and use git status u will get this message <Changes not staged for commit>
+
+# workflow that each file going through:
+<Untracked files> --> git add . --> <Changes to be committed> --> git commit -m "message" --> <nothing to commit, working tree clean>
+                    ^
+                    i--------.--> update file --> <Changes not staged for commit>
+
+# LOG
+-----
+
+# if we need to see all the commits logs inside the git
+    > git log
+
+# if u need to see the commit log for a particular member inside the git
+    > git log --author="member name"
+
+# to get more graphical and decorated view for git log we can use the command
+    > git log --oneline --graph --decorate --all
+
+# to get most recent numbers of logs 
+    > git log -<number>
+    > git log -3
+
+# to search log for specific date use
+    - since a date
+        > git log --since="date"   <--- example
+        > git log --since="2 days ago"
+        > git log --since="1 day ago"
+        > git log --since="2014-02-12T16:36:00-07:00"
+
+    - after date
+        > git log --after="2014-7-1"
+        > git log --after="yesterday"
+        > git log --after="1 week ago"
+
+    - before date
+        > git log --before="2014-7-4"
+
+    - between 2 dates
+        > git log --after="2014-7-1" --before="2014-7-4"
+
+
+
+# if u wanna to find changes that been done for a specific file
+    > git log -- <file name>
+    > git log -- index.html --oneline --graph --all  <-- example
+
+# now if u wanna to get details about any commit
+    > git show <commit id, even the first 7 chars>
+
+# to create alias for any long command <to make long command short>
+    > git config --global alias.<name> "command options"
+    > git <alias name>  <-- how to use alias
+    > git config --global alias.history "log --all --graph --decorate --oneline"  <== to use this alias $ git history
+
+# another fantastic one:
+    > git log --pretty=format:"%h%x09%an%x09%ad%x09%s" 
+
+# for more details about --pretty --> https://git-scm.com/docs/pretty-formats
+
+# for example if u wanna to do some change in the alias command after u create it. let say u need to remove --graph from it.
+# u need to edit the config file 
+    > nano ~/.gitcofig
+
+
+# the git workflow is --> working area ==> staging area ==> repository
+
+
+# CONFGIURE GIT EDITOR:
+-----------------------
+
+# if u wanna to use sublime text as git editor use the commands below <Please advise that the commands below for mac osx>
+$ ln -s /Applications/Sublime\ Text.app/Contents/SharedSupport/bin/subl /usr/local/bin/.
+$ echo $PATH
+$ git config --global core.editor "subl -n -w"
+
+
+# if u wanna to use Notepad++ as git editor in windows u ll use the steps below.
+# first of all u need to add Notepad++ to the path in windows, if u didn't change the default path of the 
+# installation u will find the notepad++.exe in <C:\Program Files (x86)\Notepad++>
+
+# go to the search and look for environment variable.
+# in environment variable --> system variables --> path --> new and put this path <C:\Program Files (x86)\Notepad++>
+
+# now we need to configure notepad++ with bash, in ur project directory.
+$ notepad++ .bash_profile  <-- if this file exist, it will create it, if not it will prompt u to create it.
+
+# in the new page add the line below.
+> alias npp='notepad++.exe --multiInst --nosession' 
+
+# now we need to configure notepad++ with git 
+$ git config --global core.editor "'C:/Program Files (x86)/Notepad++/notepad++.exe'  -multiInst -notabbar -nosession -noPlugin"
+# if u don't receive any error message that's mean it's good.
+
+# now to verify if our work is ok 
+$ cat ~/.gitconfig
+$ git config --global --list
+$ git config --global --e   <-- it's mean that i wanna to edit the config file for mac and linux.
+$ git config --global -e   <-- it's mean that i wanna to edit the config file for windows.
+
+
+# DIFF
+------
+
+# if u wanna to see the changes between ur repo area and ur working area, in another word the difference between local repo and local working area
+    > git diff
+
+# now to view the changes between staging area and repo
+    > git diff --staged
+
+# if u need to delete file in git, remove it from the working area using rm <file name>, or
+    > git rm <file name>  --> if we using this command we will skip the next command since it will be staged already, we need to commit directly. 
+    > git add .
+    > git commit -m "message" 
+
+# if u wanna to create a centralized repo in github
+    -create new repo in GitHub
+    -create new work area in ur computer
+    -initialize the new work are using git init
+    -copy the GitHub url using <clone>
+        > git remote add origin "GitHub url"
+     -pull the changes from the GitHub
+        > git pull origin <branch>
+
+     - to pull from unrelated branches. there will be issue if unrelated history and to resolve this.
+        > git pull origin main --allow-unrelated-histories 
+
+     -push the changes from local repo to GitHub
+        > git push origin main
+     
+     -we need to keep our local repo up to date with centralized repo.
+
+
+# to compare a specific file between working area and staging area.
+    > git diff <file name>
+
+# to compare the changes between working/staging area and repo
+    > git diff HEAD <file name > <--- file name is optional
+
+# to compare the changes between staging area and repo
+    > git diff --staged HEAD <file name>
+
+# to compare the changes between 2 commits
+    > git diff <commit id 1> <commit id 2>
+
+# to compare the changes between the last commit and -1 the last commit <previous the last commit>
+    > git diff HEAD HEAD^
+
+# to find difference between branch and another branch
+    > git diff <branch1> <branch2>
+
+# BRANCHING:
+-----------
+
+# The idea of branching is work with many features at the same time, without changing code in the main untill test it and approve it then merge the feature branch with main later.
+
+# to create new branch/feature <which is only a pointer not a real repo> use the following command
+    > git branch <branch name> OR git checkout -b <branch name>
+    ex: 
+    > git branch mustafa-lbaas
+
+# now to switch to the new branch/feature <after creating new branch>
+    > git checkout <branch name>
+
+# to view branches in git
+    > git branch
+
+# to list all branches in the git as well the remote repo and branches.
+    > git branch -a 
+
+# file created in a branch <not main> will not been seen in main until merge.
+
+# if u wanna to push the content of a branch to GitHub please push it to a branch, even if it's not exist in the GitHub yet.
+
+# to delete branch from git locally, u need first not to be in this branch
+    > git branch -d <branch name>
+
+# if u wanna to rename the branch
+    > git branch -m <old branch name> <new branch name>
+
+# after ensure that everything in the branch is ok u can merge the branch with main.
+
+# Merging:
+----------
+# after working with differnt features, we need to combine the develped codes, bug fix, changes ... etc, into our main code.
+
+# to merge with a specific branch for ex main, u need:
+    i. git checkout to the main/or any other branch or feature.
+    ii. git merge <branch name>  <-- if only move commits from branch to another u can see <Fast-forward just move the pointer>
+    iii. git push origin <branch name>   <--- GitHub
+
+# the result of merging process will be stuffed to the branch u r currently working on 
+
+#if u wanna to add message with merge process
+    > git merge <branch1> -m "Some Text"
+
+# so in merge it will reduce all feature comments in one comment at merging step, (there's disadvantage with this approach, if you need to rest one step back in the main branch u'll get back directly to 8504b96 m2 and u'll lose all changes happend in the feature branch).
+
+    *   a99ff0c (origin/master) merge successfully
+    |\
+    | * da057e7 f2
+    | * 3377a39 f1
+    | | 
+    |/
+    * 8504b96 m2
+    * 2ff930b m1
+
+
+# MERGE CONFLICTS:
+-----------------
+# simply it's mean the git don't know what do and how to combine changes?
+
+# it's occure when we have changes on the same file and on the same lines.
+
+# if u got this error message <CONFLICT (content): Merge conflict in file name> that's mean we have conflict issue in this file.
+
+# if u have editor connected to your git it will be more easy to deal with such issue.
+# you have 2 way to resolve this issue
+    i. resolve the conflict issue directly by using editor to update the file and u have 4 choices to do so:
+        - Accept current change
+        - Accept incoming change
+        - Accept both changes
+        - compare changes
+        - write new thing totally different.
+        # with selecting any of above you need then to
+            > git add .
+            > git commit -m "any good message - conflict resolved"
+
+    ii. or abortin the merge process by
+        > git merge --abort
+        - resovle the conflict and then try to merge again
+
+
+# (Remotely) one of good scenarios in real, that we have 2 engineers develop the same file and the same line, both push the new update to remote repo (github), when merging the first engineer dev. it will be accepted without any issue, but when trying to merge the second engineer dev. we will got conflict.
+    
+    * How to implement the scenario:
+
+    - in the main branch create new file with name <feature>
+    - create new branch with name <feature1>
+    - in feature1 add in the first line in feature file [feature1] and save it, add and commit
+    - create new branch with name <feature2>
+    - in feature2 add in the first line in feature file [feature2] and save it, add and commit.
+    - now push feature1 to origin feature1
+    - push feature2 to origin feature2 
+
+    - create new PR to merge feature1 with main
+    - create new PR to merge feature2 with main
+
+    - now review PR1 and merge feature1 with main
+    - now we need to review PR2 and we will get conflict error.
+    - use web eiditor it's like the VSCode, edit what you want and --> mark as resolved --> commit merge --> merge pull request 
+    - commit merge
+
+# (Locally) repeat the scenario above but with feature3 and feature4
+    - we have a choice not to resovle the conflict using github web editor instead we will
+    - merge main branch into feature4 (reverse merging)
+        > git checkout main
+        > git pull origin main
+        > git checkout feature4
+        > git merge main 
+        - we will get conflict as before and we need to resolve it as before locally.
+        > git add .
+        > git commit -m "conflict resolved"
+        > git push origin feature4
+
+    - back to github, u'll see conflict resolved.
+    - from this point u can continue merging process.
+
+
+
+# Feature Branch Workflow
+-------------------------
+
+    i. create a feature branch
+    ii. upload feature branch to github following the steps below:
+        - create repo in github.
+        - copy url
+        - change master branch name to main branch using:
+            > git branch -m master main
+        - in the local main branch use:
+            > git remote add origin <github url>  (btw origin is just a name u can use any name but this is most common)
+        - pull any files from the remote repo, github repo
+            > git pull origin main
+        - now push content to the remote repo using 
+            > git push origin main
+        - now check out to the other branch <new-branch> and push changes.
+            > git push origin <branch name like: new-feature>
+    
+    iii. we have 2 way to do merge either locally or remotely.
+        - locally merge mean you merge feature branch with main branch then push change to the remote repo.
+        - remote merge mean we will do merge on the remote repo.
+    iii. create a "Pull Request" or "PR" -> (do code review)
+        - go to Pull requests in github --> new pull request, or draft untill you be sure it's ok to activate PR.
+        - check the changes in the target file  --> check the File changed
+        - add comments as u need to accept or to reject change until get success --> Review Changes
+    iv. merge feature branch into main branch -> (merge happens on github)
+    v.  in case of merge in github we need to get all changes toward local repo
+        > git fetch
+        - u will see that the HEAD is pointed to (origin/main), this mean we fetch changed in the remote repo
+        - till this point our main branch is not sync with remote repo, to do so, 
+            > git pull origin main
+        - u will see the HEAD will be point to --> (HEAD -> main, origin/main)  and it's mean both sync  
+
+
+
+# REBASE:
+---------
+# we will deal with another approach here which is rebase, although both rebase and merge look like doing the same job, take commits from feature branch to main branch.
+# in merge it will take all commits and kind of stuff them in 1 merge commit like below example:
+
+*   b61ab3c Merge branch 'mustafa-update' into html-update  <-- one merge commit
+|\
+| * 2ce8c00 clean up the file in mustafa branch
+| * 8b69e2a add new line
+* | 7590134 second attempt on branch html-update
+* | 72dbae8 first update testPage.html in branch html-update
+|/
+* d1223eb (origin/main, main) create testPage.html
+
+# so u can see all commits in the feature had been represented (reduced) by one commit in the main branch.
+
+# instead in rebase it take your commits in the feature branch and move them to the top of the main commits.
+
+# in another word git rebase is re-writing the project history by creating brand new commits for each commit, so it's move the entire feature branch commits to beginning on the top of the main branch.
+
+# so rebasing is changing the base of your branch from one commit to another making it appear as if you'd created your branch from a different commit.
+
+# steps need to work with rebase:
+    i. must sure local main repos sync with remote main repo 
+    ii. need to be in main and run
+        > git pull
+    
+    iii. u can create new branch by using 
+        > git checkout -b <branch name/any name>
+    iv. now add your commits, let say you add couple commits after develop or update some file.
+    v. after you are done with all developing you need to check out to the main branch 
+        > git checkout main
+    vi. at the sametime that u start develping ur branch, the remote main branch had been updated as well so u need to sync with main again.
+        > git pull
+    vii. so in this case we will be at least one commit behined, like the figure below:
+        
+        | O 
+        O |
+        | O
+        O/
+        |
+        O
+
+    viii. in this case check out to ur branch 
+        > git checkout <ur branch name/feature branch>
+    ix. do rebase against the main
+        > git rebase main 
+
+          O
+          |
+        | O 
+        O/
+        | 
+        O
+        |
+        O
+    x. now check out to main again
+        > git checkout main
+    xi. final step is to rebase aginst your branch or feature branch.
+        > git rebase <my branch/feature branch>
+
+        | 
+        O
+        | 
+        O
+        |
+        O
+        |
+        O
+        |
+        O
+    
+
+        > git push
+
+# using git rebase is always forward process.
+
+# to rebase for a n number of commits back!
+    > git rebase -i HEAD~n
+    > git rebase -i HEAD~3  <-- rebase for 3 commits.
+
+
+# REBASE CONFLICT:
+------------------
+# same issue occure when change the same file and same line.
+
+    - to see where's the conflict exactly.
+        > alias conflict='git diff --name-only --diff-filter=U'
+    
+    - either u abort rebase process at all using
+        > git rebase --abort
+    
+    - or resolve conflict
+    - add update to staging area
+        > git add .
+        > git rebase --continue 
+
+
+
+# to skip the current patching in rebase process
+$ git rebase --skip
+
+# BRANCH DIVERGED:
+-----------------
+
+# take a look on the example below:
+    
+    origin/main:
+    A -- B -- C -- D
+    local branch:
+    A -- B -- E -- F -- G
+
+# u'll see this message <Your branch and 'origin/main' have diverged, and have 3 and 2 different commits each ...>.
+
+# from the graph above u can see the diverged happen after changes B
+
+# we have 2 different commits in origin/main (C,D)
+# we have 3 different commits in local (E,F,G)
+
+# The cause of this issue: This typically happens when you are trying to merge your changes to ‘origin/main’ and someone else in your team pushed some other changes after you sync with ‘origin/main’ and before you merge your changes.
+
+# there's 2 ways to resolve this issue:
+
+    - rebase
+        > git pull --rebase origin main. and result will be
+            
+            origin/main:
+            A -- B -- C -- D
+            local branch:
+            A -- B -- C -- D -- E -- F -- G
+        
+    -merge
+        > git merge origin main
+
+            origin/main:
+            A -- B -- C -- D
+            local branch:
+                      .-- C -- D ----- .  
+            A -- B --|                 |-- H
+                      .-- E -- F -- G -.   
+
+# this phrase (HEAD -> main, origin/main, origin/HEAD) mean both local and remote repo in sync.
+
+
+# CHANGE STASH:
+---------------
+
+# it's used when wanna to stash or store change / multiple changes u already did but not ready to commit yet and need to work with another urgent thing.
+
+# stash happen for changes in the working area
+
+# to stash change in the working area use
+    > git stash
+    > git status  <-- working area is clean now :)
+
+# and when u ready u can apply these changes to ur working tree
+
+
+# to list all stashes that u have use:
+    > git stash list
+
+# WIP = Working In Progress
+
+# to apply the latest changes in stash (last in first out) use
+$ git stash pop
+
+# when u apply all changes in the stash and try to list stash u will get nothing.
+    > git stash list --> nothing to display
+
+# if u wanna to apply changes from stash and in the same time u don't need to remove that changes from stash use:
+    > git stash apply
+
+# latest stash always will map with 0 index :)
+
+# if u wanna to apply specific stash on ur working dirctory.
+    > git stash apply stash@{index#}
+    > git stash pop stash@{index#}
+
+
+# to do stash with message, so u can use it later.
+    > git stash save "some description for your new stash"
+
+# after revert changes from the stash u need to drop it, otherwise it will confuse u. 
+    - if u wanna to drop a specific stash:
+        > git stash drop stash@{index#}
+        > git stash drop  <-- will drop latest stash --> stash@{0}
+
+    - if u wanna to drop all stashes:
+        > git stash clear
+
+
+# to stash tracked or changes and untracked files 
+    > git stash -u
+
+
+# to list files that tracked by git
+    > git ls-files
+
+
+# to stash all files
+    > git stash -a
+
+# to see what actully in a specific stash (if we have multiple stashs) use
+    > git stash show
+    > git stash show stash@{index#}
+
+    - to see full details
+        > git stash show -p
+
+# to apply partial stash specially when u have many changes in the working area use
+    > git stash -p 
+    - go through questions and changes one by one.
+
+
+# Please delete this file <sh.exe.stackdump>
+
+# to creates a new branch with the latest stash, and then deletes the latest stash ( like stash pop).
+    > git stash branch <branch name>
+    
+    - to do the same but with a specific stash
+        > git stash branch <name> stash@{1}
+
+# TAGGING:
+----------
+
+# Tagging in Git refers to creating specific points in history.
+
+# we need tags:
+    i. to mark release points for your code/data.
+    ii. to create historic points.
+
+# how to create tag:
+    i. checkout to the branch u wanna to create tag.
+        > git checkout <branch name>
+    ii. create tag with some name
+        > git tag <tag name>
+    iii. to view a tag
+        > git tag
+
+
+    iv. to create annotated tag, tag with description
+        > git tag -a <tag name> -m "description"
+
+
+    v. to diplay tags
+        > git tag
+        > git show <tag name>
+        > git tag --list
+        > git tag -l <tag name>  --> git tag -l "v1.*"
+
+    vi. to push tag to remote repo,
+        - u can see in the remote repo, there's 0 releases which is mean 0 tags
+            > git push origin <tag name>
+        - to push all tags at once
+            > git push origin --tags
+            > git push --tags
+
+    vii. to delete tags if required
+        - to delete tags from local:
+            > git tag -d <tag name>
+            > git tag --delete v1.0
+
+        - to delete multiple tags from local
+            > git tag -d <tag name1> <tag name2> ...
+
+        - to delete tags from remote:
+            > git push origin -d <tag name>
+            > git push origin --delete <tag name>
+            > git push origin :<tag name>
+
+        - to delete multiple tags from repo
+            > git push origin -d <tag name1> <tag name2> ...
+
+    viii. to crete tag for old comment:
+        > git tag <tag name> <reference of commit>
+
+
+# to compare particular tags
+    > git diff <tag name1> <tag name2>
+
+
+# if u wanna to update tag, if by mistake u tagged the wrong commit.
+    > git tag -a <tag name> -f <message from given file or editor>
+
+
+
+# OPERATIONS:
+------------
+
+
+# u can do both staging and commit at the same time if the file already been tracked.
+$ git commit -am "text"
+
+# in case u put wrong message with git commit and u wanna to fix it.
+    > git commit --amend -m <new message>
+
+
+# if u wanna after the target commit ID, all the file or changes will move to staging area.
+    > git reset --soft <commit id>
+
+# to move all changes to the working area from a specific commit id:
+    > git reset <commit id>
+
+# to remove changes from a specific commit totally.
+    > git reset --hard <commit it>
+
+# if we use reset --hard and we wanna to recover and track the changes that had been lost because of this reset. <it will remain for maximum 30 days>
+    > git reflog  <--- by this command u can review the reference log for git and find the commit id that u need to recover :)
+
+# to move the git HEAD to specific commit id
+    > git checkout <commit id>
+
+# if for any reason have a lot of files and directories that had been created at some time in the git project directory and they are untracked files.
+# if we need to clean or git project directory.
+    > git clean -df  --> -d: remove directories and files, -f: force
+
+# to revert a commit from the local repo, changes will be back to the working area.
+    > git reset HEAD~
+
+# to remove file from staging area and get it back to the working area
+    > git reset HEAD <file name>
+
+
+# if u wanna to remove .git folder from ur project
+    > rm -rf .git
+
+# fork in GitHub mean create that target repo in ur private space or personal repo.
+
+# to clone project from GitHub to our local work area.
+    > git clone <url from github>
+
+# to clone from specific branch 
+    > git clone --branch <branchname> <remote-repo-url>
+    or
+    > git clone -b <branchname> <remote-repo-url>
+
+# working with remote repo.
+    > git remote -v
+    > git remote show origin
+
+# best with text editor, it will open editor to add message
+    > git commit
+
+# general notes when u use git  1. use add for any untracked files --> 2. commit them to local repo --> 3. pull the latest update from the centralize repo --> 4. use push
+
+# to discard changes in file before staging, use
+    > git checkout -- <file>
+
+# if u wanna to remove file for example after u already commit all changes and for some reason u wanna to get it back
+    > git rm <file name> ---> this will remove file from staging area as well working area !!!.
+    > git reset HEAD~
+    > git checkout -- <file name>
+
+# now if we remove file directly from the system <not using git>
+    > rm <file name> 
+    > git reset HEAD~
+    > git checkout -- <file name>
+
+# now if we remove the file and add the changes to staging area by using < git add .>
+    > git reset HEAD <file name>
+    > git checkout -- <file name>
+
+# now if u wanna to delete a tree of folders with files included.
+    > mkdir newdir1/newdir2/newdir3
+    > git rm -rf <directory name>  ---> recursively delete
+
+
+# to rename file in git project
+    > git mv <old file name> <new file name>
+
+# there's different between using mv as os command and git mv, using of <mv> it will working only on the working area by delete the old named file and create new one. conversely the git mv will working on both working area and staging area as well, by rename the file from old name to the new name.
+
+# GIT IGNORE:
+------------
+# if u wanna to exclude the unwanted files in git
+    - create hidden file called <.gitignore>
+    .git ignore have patterns:
+        - <file name>
+        - <*.123>
+        - <folder name/>
+
+
+# if u face any issue with .gitignore file like git don't ignore what u put in the .gitignore file
+    i. git rm -r --cached .
+    ii.  git add .
+    iii. git commit -m "fixed untracked files"
+
+
+# Ex: to illustrate how .gitignore working. 
+    i. create access.log file
+    ii. nano access.log
+    iii. add the content below:
+        - /status 200
+        - /httpaccess 200
+        - /mktsp 300
+        - /dummy 3000
+
+    iv. create error.log file
+    v. nano error.log
+        - Authen error response code is 400
+        - Not able to connect to server
+        - State elemnet reference
+        - Array out of bound index
+
+    vi. now to exclude all .log file(s) from  git project
+    vii. nano .gitignore
+    viii. *.log  <-- add this to .gitignore
+
+================================================================End Of Git Phase==================================================

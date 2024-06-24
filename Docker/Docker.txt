@@ -1,0 +1,2278 @@
+==================================================================== Docker ======================================================
+
+# Docker is a tool designed to make it easier to create, deploy and run applications by using containers (Microservices).
+# Docker had been written by GO lang.
+# Docker containers are lightweight alternatives to virtual machines and use the host OS.!
+# You don't have to pre-allocate any RAM in containers 
+
+														 .- Stable release <-- release every quarter 
+								.- Community  --> Free --|
+# there's 2 flavor for docker --| 						 .- edge release   <-- come with lates technologies not been tested yet/monthly
+								.- Enterprise --> Paied
+
+
+# docker edition available at <store.docker.com>
+
+						.- CE = Community Edition
+# docker abbreviation --|
+						.- EE = Entrprise Edition
+
+						  .- Linux   (naitivly support docker)
+# major type of install --|- Mac/Win (set of toolbox)
+						  .- Cloud   (AWS/Azure/Google)
+
+
+# we will start with installing docker on windows 10 Pro/Ent Edition.
+ - first u need to go to this link https://store.docker.com to download the docker image --> brows popular image. 
+ - we will use the community edition
+ - use the stable image
+ - follow the instruction.
+ 
+# now if u wann to install docker on server 2016 u need to do the following steps.
+ - go to this link https://store.docker.com
+ - use docker EE 
+ - select windows.
+ - follow the instruction.
+
+# to install docker on mac all u need just go to https://store.docker.com and download docker, follow up instructions.
+
+# to verify docker on ur terminal
+$ docker version
+
+# if u restart docker and run the command above u will see only the client info, since mac don't support docker natively.
+# client is running on ur machine  --> OS/Arch:   darwin/amd64
+# server is running on linux core. --> OS/Arch:   linux/amd64
+
+-----------------------------------------------------------Create Machine on Cloud----------------------------------------------
+
+# Digital Ocean
+# Memory: 2GB , vCPUs: 2, Disk: 60GB, Transfer: 3TB  --> Name: DockerMachine
+
+# this will be used as cloud for docker.
+# ssh to the new machine using username and password the u got by email :)
+# to double check that u r in the correct machine use
+$ hostname
+
+# we will skip installing docker for windows for now.  <<<<<<<=========
+
+# we will skip installing docker for Linux for now.  <------- and we will use it in docker swarm cluster
+
+--------------------------------------------------------------Docker Container--------------------------------------------------
+
+# docker cli = docker client
+# docker engine = docker server
+
+* btw in this course he will use machine in cloud to run docker.
+
+# to get the machine name
+$ hostname
+
+# to find the docker version
+$ docker version  OR  docker --version
+
+# to verify docker engin setup and details
+$ docker info
+
+# to list all docker commands
+$ docker
+# the result will come up wiht 2 segments of commands 
+
+ - Management commands
+ - commands  <-- early 2017 u will get only this segment.
+# docker community relize that there's alot of commands and there's a confusion, so they split them to 2 segments. :)
+
+# docker management commands format
+# docker <command> <sub-command> (optional)
+
+--------------------------------------------------------Start Working with Container--------------------------------------------
+
+
+# --> Docker  --> Image --> Container
+
+# in this lec we will use open source Nginx web-server and docker central repository
+# http://hub.docker.com   --> it's a centeral repo for to push our image or get public image.
+# if u looking for official image u will see this lable on the image <official>
+
+# now u need to execute this command.
+$ docker info
+
+# docker container run hello-world    <-- this command will look into local repo if the image not available it will pull the image from the docker hub.
+
+# if u repeat the command above again u wil see that the image availabe in the local repo.
+
+# now we need to run Nginx web-server in the docker 
+# > docker container run --publish <host_port:container_port> <image name>
+$ docker container run --publish 80:80 nginx
+
+# to exit out of ur container just submit CTRL+C
+
+# process behinde the sceen
+ - download the image from docker hub
+ - started new container
+ - exposed port 80 on host machine
+ - route traffic to the container port 80
+
+# keep in mind the command above will run on the forground.
+# if u need to rung Nginx on the back ground.
+# > docker container run --publish <host_port:container_port> --detach <image name>
+$ docker container run --publish 80:80 --detach nginx 
+
+# the command above will return a container id, for ex <84136aa7c786c92bd5c08c52f45e16da9c8ddf5a35809b28cefcd950012c27df>
+# now check ur browser again to ensure that the nginx working 
+
+# if u wanna to run another server with different port u can use 
+$ docker container run --publish 8087:80 --detach nginx   <-- example
+<9d258d465b37535782716e98df07700851b26e00e8e4dd07d8fd5935090fb8e6>
+
+# now if u wanna to list all running containers on ur machine.
+$ docker container ls
+
+# to stop container
+$ docker container stop <container_id>
+# after submit the command above it will return the container id that u used..
+
+# to list all running and stopped containers
+$ docker containers ls -a
+
+						   .- run    --> start a new container always.
+# run vs start container --|
+						   .- start  --> start an existing container.  > docker container start <container_id>
+
+# if we wanna to provide a meaningful name to our container
+> docker container run --publish 80:80 --detach --name <name> <image_name>
+
+# now to see the log for a specific container 
+> docker container logs <container_name> OR <container_id>
+
+# to see process running inside ur container.
+> docker container top <container_id>
+
+# to remove the unwanted containers use
+> docker container rm <container_id 1> <container_id 2> ... <container_id n>
+
+# u can't remove running container, u will get error and ask u to stop the container.
+
+# if u r sure that u wanna to remove a running container in this case use -f --> force
+> docker container rm -f <container_id>
+
+# let's take a look on the internal process when we run a container.
+ - looks for the image in the image cache
+ - then looks in the remote docker repo <default hub.docker.com>
+ - download the latest version of the image.
+ - create new container based on the image.
+ - gives it a virtual IP on private network inside docker engine.
+ - open port 80 on host machine and rout to port 80 inside container.
+ - start container by using CMD in imager docker file.
+
+# keep in mind the containers virtualize the O.S. but the vms virtulize the hardware.
+
+# if for example we are looking for how many processors working on a host machine.
+$ ps aux
+
+# if u wanna to stop container u can use 3 or 4 first digits of container id and docker will verify the rest.
+
+# if u wanna to explor docker commands u can use the command below:
+$ docker --help
+
+
+-----------------------------------------------------------------Assignments----------------------------------------------------
+
+# The docker assignment:- 
+ - run nginx, mysql and apache (httpd) server
+ - all containers must run in background
+ - provide name to all containers
+ - start nginx on port 80:80
+ - start mysql on port 3306:3306
+ - start apache server on port 8080:80   --> u will find the search result it's name httpd :)
+
+# let's start with nginx
+$ docker container run -d -p 80:80 --name proxyserver nginx  <-- the first port will be open on the host machine and the second port on the container.
+
+# -d == --detach and -p == --publish
+
+# let's start now the apache server
+$ docker container run -d -p 8080:80 --name webserver httpd
+
+# let's start now the mysql server, there's some notes we need to take care of.
+ - use --env to pass the environment variable (MYSQL_RANDOM_ROOT_PASSWORD=yes)
+ - use docker container logs command on mysql to find the random password created on start-up
+$ docker container run -d -p 3306:3306 --name mysqldb --env MYSQL_RANDOM_ROOT_PASSWORD=yes mysql
+$ docker container logs mysqldb  --> to get the password (AJpWbMq1Mm2tzukheayssiHVjh8X/BtV)
+
+---------------------------------------------------------------CLI Monitoring---------------------------------------------------
+
+# to see what's going inside the running container
+$ docker container top <continer_id/container_name> --> procees list in the container
+
+# the old fashon of <docker container ls> is <docker ps> 
+
+# to get the details about a container configuration
+$ docker container inspect <continer_id/container_name>  ==> The result will be a json file :)
+
+# to get performance states on all containers
+$ docker container stats 
+
+# if u waana to get inside a container and do so modification.
+# the first step we need to run the container in <interactive mode>
+> docker container run -it --name <container_name> <image_name> <command> --> to get more help <docker container run --help>
+$ docker container run -it --name webproxy nginx /bin/bash
+# to exit just use
+$ exit ---> and hit enter
+# as soon as u exit this kind of container, container will be stop running.
+
+# to see the interactive container use <docker container ls -a>
+
+# now the challenge is how to execute command inside a running command :)
+> docker container exec -it <continer_id/container_name>  <command> --> open running container interactivly.
+
+$ docker container exec -it proxyserver touch /tmp/mustafa
+$ docker container exec -it proxyserver bash
+# now let's run new container as ubuntu.
+$ docker container run -it ubuntu bash
+# because of the distro above is very light so we need to install the full package
+$ apt-get update
+$ apt-get install curl
+# curl https://www.facebook.com
+
+# apt-get install net-tools
+# apt-get install iputils-ping
+
+> docker exec  											  			--> run new command in a running container.
+
+-------------------------------------------------------------Docker Networking--------------------------------------------------
+
+# it will be unuseful to use docker individually. 
+# each container connect to virtual private network called "bridge".
+# bridge is a docker default network driver <software>.
+# containers on same bridge can communicate with each other without port. 
+# containers in different bridges can't talk to each other.
+# u r allow to create multiple VPN in docker.
+# u can create multiple rules for single network.
+# u can attach multiple containers to one network, u can attach one container to multiple networks and u can do no attach for a container to any network.
+
+# to start container with allowing traffic from port on host machine.
+> docker container run -p <host_port> : <container_port> -d <image_name>
+
+# to find traffic and protocol on a container.
+> docker port <container_id>
+
+# to find docker container ip
+> docker inspect <container_id>
+
+# ex:
+$ docker container run -p 8080:80 -d nginx
+$ ifconfig en0  <-- to get host machine ip
+
+# copy the ip to the browser with host port --> <192.168.0.10:8080>
+$ docker container port <container_id>
+$ docker container inspect <container_id>  --> look for the "NetworkSettings" OR
+$ docker container inspect -f '{{.NetworkSettings.IPAddress}}' e87c32600469    <-- container_id
+
+# to list all available networks that the engine daemons knows about.
+$ docker network ls
+
+# to use filter for example to filter all bridges' networks
+$ docker network ls -f "driver=bridge"
+
+# to find all network IDs and drivers
+$ docker network ls --format "{{.ID}}:{{.Driver}}"    <-- it will return data in format of json.
+
+# to get help on network command use
+$ docker network --help
+
+# to inspect any network
+$ docker network inspect <network_id>  <-- returns information about one or more network in the format of json
+
+# to create new network on a host machine.
+$ docker network create <network_name> --> by default it will create a "bridge" network
+
+# to create a bridge network 
+$ docker network create -d bridge <bridge_name>
+
+# now to connect a network with a container.
+> docker network connect Network1 Container1   <-- container1 can by id or name.
+
+# in the command above it will create new network interface and attach it to the container.
+
+# take a look on this example, this formula used when running container first time and we need to connect it to a network:
+$ docker container run -p 8085:80 -d --name my_nginx --network myNetwork nginx  
+
+# the next step u need to inspect both the network and then the container.
+
+# now to connect a running machine to two networks
+$ docker network connect <network_name> <container_name> 
+$ docker network connect myNetwork kind_archimedes 
+$ docker network inspect myNetwork
+$ docker container inspect kind_archimedes <-- at this point u will see that this container had been connected to 2 networks
+
+# to disconnect a container from a network use
+> docker network disconnect Netowrk1 Container1
+$ docker network disconnect bridge kind_archimedes
+
+# if u disconnect a container from all networks, that's mean u will not be able to contact this container.
+
+# containers use DNS to communicate.
+# containers don't use IPs to communicate, instead they are using DNS.
+$ docker container ls
+$ docker network ls
+$ docker network inspect myNetwork  <-- <myNetwork> is the name of the bridge that we already created.
+
+# to use alpine version
+$ docker container run -d --name mynginx_alpine_1 --network myNetwork nginx:alpine
+
+# we will create 2 containers alpine and connect them both to the <myNetwork> then we will try to ping from container to another.
+$ docker container exec -it mynginx_alpine ping mynginx_alpine_1
+
+
+# why containers don't use IPs to communicate with each others because IPs are static in the container.
+# and when u stop contaienr and start a new one, it may be using the same IP.
+
+# to remove network
+$ docker network rm <network_name>
+
+---------------------------------------------------------------Docker Images----------------------------------------------------
+
+# image is a combination of a file system and parameters, images containe the binaries and dependencies.
+
+# to list all docker images in ur machine.
+$ docker images  OR docker image ls
+
+# images don't contain O.S and O.S packages
+# repository name is mean parent directory name ==> name of the file system u have :)
+
+# if u don't specified the image version, client will defaults to the latest.
+
+# docker images differenciation .-- Base Image: image that have no parent image --|- ubuntu
+							    |												  |- busybox
+								|                  								  |- debian
+								|
+								|-- Child Image: images that build on base images and add additional functinality 
+								|-- Official Images: images that officialy maintend and support by the folks, one word long
+								.-- User Images: images create and shared by users. (user/image-name)
+
+
+# if u r looking for all official images, --> docker hub --> explore tab
+# to dowanload an image
+> docker pull <image_name> : <image_version> 
+$ docker pull mysql:5.7
+$ docker images
+
+# images in general consist of series of layers
+# each layer has <union file system>
+# docker use <union file systems> to combine these layers into a single image.
+# union file systems allow files and directoris of sperate file systems, known as branch.
+
+# to show image layers
+> docker history <image_name>
+$ docker history mysql
+$ docker history nginx
+
+# to get complete meta data of an image, 
+> docker inspect <image_name>
+$ docker inspect ngnix
+
+# images have no name, 
+# tag is specifing the tag of that particular repository.
+# image id is the id generated when u push ur image over the docker hub.
+# tag always associated with the latest image id.
+
+									.-- tag add to the image during building time
+# there're 2 ways to tag an image --|
+									.-- tag explicitly using the tag command 
+
+# tag command is 
+> docker tag SOURCE_IMAGE[:TAG] TARGET_IMAGE[:TAG]
+$ docker tag mysql:5.7 mysqlmustafa:test  <-- warning this is wrong way to make another copy where single name only for official image.
+
+# if u don't define any tag, by default takes "latest" tag :)
+
+# do upload docker image to the docker hub u need account to do this
+# docker cloud using (docker hub) as it's native registery for storing both public and private repos.
+
+# to log into docker cloud from terminal u will use this command 
+$ docker login   --> it will ask for your creds.
+# one u enter the creds it will automatically encrypted and store in your machine.
+# to view creds use
+$ cat ~/.docker/config.json 
+
+# one the you login successfully u can push the image to the cloud.
+
+> docker image push USER(the account name)/image name
+
+--- Warning---
+$ docker image push mysqlmustafa   <-- this will not be applied it will be denied coz of the tag where the (single name) only allowd for official image.
+
+# to resolve the issue above 
+$ docker image tag mysql mustafakamil/mysqlmustafa
+
+# now submit this command agin.
+$ docker image push mustafakamil/mysqlmustafa   <-- this image will be accepted because it's not a single image name
+
+# single image name allowed only for official docker image.
+
+# if u wanna to add a tag to the uploaded image
+$ docker image tag mustafakamil/mysqlmustafa  mustafakamil/mysqlmustafa:1.0.1
+$ docker images
+
+# after the command above u will see there's another image with this tag 1.0.1
+
+# although the tags are different but the <image_id> are the same coze they are just a copy. :)
+
+# now we need to push the image again.
+$ docker image push mustafakamil/mysqlmustafa:1.0.1
+
+# if u notice in the case above it will not upload all the image it will upload only the changes and that was the tag
+# if there is any changes with filesystem in this case it will upload the whole image.
+
+# now after u r done with all process above u need to logout using the command below
+$ docker logout
+
+# to delete image from the docker repo 
+-> click on the image name --> settings --> delet repository --> confirm
+
+
+------------------------------------------------------------Building Docker Images----------------------------------------------
+
+# dockerfile which is a file will be used to create basic images or custome images.
+# docker can build images automatically by reading the instructions from dockerfile
+
+# dockerfile is a text document that contains all commands a user could call on the command line to assemble an image.
+
+# docker image consist of (read-only layers) each layer of them, represents a dockerfile instruction
+
+# to build docker image from a dockerfile
+> docker build -t <image_name>:<tag> <path_of_dokcerfile> 
+
+# Dockerfile instructions are use to create the docker images.
+
+# FROM: this instruction is used to initilize a new build stage and sets the base image for subsequent instructions.
+# A valid dockerfile must start with a <FROM> instruction
+# Base image can be any valid image
+
+# FROM instruction fromat 
+> FROM <image>[:<tag>]
+
+# LABEL: added to images to organize images by project, record licens information.
+# for each label need to be added the line must have key-value pair.
+# example:
+> LABEL com.example.version='0.0.1-beta'
+> LABEL vendore1='ACME Incorporated'    <-- another label.
+
+# RUN: this instruction is used to execute any commands in new layer on top of the current image and commit the result.
+# the resulting committed image will be used for the next step in the Dockerfile.
+
+# Example:
+FROM ubuntu:14.04
+RUN apt-get update
+RUN apt-get install -y curl
+
+
+# CMD: this instruction should be used to run the software contained by ur image, along with any arguments.
+# the format will be:
+CMD ["executable","param1","param2"]
+
+# can only be (one) CMD command in the dockerfile, if u list more than one command, the last one only will be effect.
+# the purpose of the CMD command is to provide defaults for an executing container.
+
+# EXPOSE: this instruction is used to indicates the ports on which a container listens for connection.
+# the format will be:
+EXPOSE <port>
+
+#ENV: this instruction is used to sets the environment variables, inside the image which will be available during build time as well as in a running container
+<Key> to the <Value>
+
+# to make new software easier to run, u can use ENV to update the PATH environment variable for the software your container installes.
+
+# ADD: this instruction is used to copies new files, directories or remote file URLs from <src> and add them to the filesystem of the image at the path <dest>.
+
+# the format will be:
+ADD hom*/mydir/   --> add all files starting with hom
+
+# COPY is like the command above ADD but don't accept URL as source only locals.
+> COPY src dest
+
+# VOLUME: this instruction should be used to expose any database storage area, configuration storage, or files/folders created by ur docker container.
+
+# WORKDIR: instruction sets working directory for any RUN, CMD and ADD instructions that follow it in the docker file.
+
+# now we are ready to build our custom docker image. 
+
+# normally docker image build from a docker file.
+
+# docker build syntax:
+> docker build -t ImageName:TagName dir
+
+# <-t> is to mention a tag to ur image.
+
+# let's start to create a custom nginx image and excute it.
+
+# please use visual studio editor to build ur file.
+
+# if u wanna for example to add new extension for ur visual studio, the best one will be from the microsoft :)
+
+# to get auto complete in ur visual studio hit ctrl+space :)
+
+# now we have a samll sample of a dockerfile as below:
+
+	FROM ubuntu:latest
+	
+	LABEL version="0.0.1"
+	LABEL maintainer="godric.phoenix@gmail.com"
+	
+	RUN apt-get update && apt-get upgrade -y 
+	
+	RUN apt-get install nginx -y
+	
+	EXPOSE 90
+	
+	CMD [ "nginx","-g","daemon off;" ]
+
+# before start running the file above please be sure that's no any other container running at this time.
+ $ docker ps
+
+# now verify how many images u have in ur machine.
+ $ docker images
+
+# now let's run the dockerfile above as below:
+ ~/Desktop/build docker images$ docker build -t customngnix:0.0.1 ./
+
+# each instruction mentioned in ur dockerfile it will be a step during execution process...:)
+
+# now check ur local images 
+ $ docker images   --> u'll see the new custom image available...:)
+
+# now to run this image 
+ $ docker run -d -p 4444:90 customngnix:0.0.1
+
+# now u can modify the dockerfile by adding some comments before each instruction and change the port to 80 for example
+
+# after saving all changes that u added to the file run the same command to build it.
+ $ docker build -t customngnix:0.0.2 ./
+
+# u will see at this time it's so fast, coz the docker identified where the change present and start change it
+
+# let's run this new image.
+ $ docker run -d -p 8088:80 customngnix:0.0.2 
+
+# now let's talk about how to extend official docker image
+
+# in our example we will going to change the official <index.html> with new custom one.
+
+# go to ur <dockerfile> and start modify it with following
+
+ FROM nginx:latest
+ 
+ LABEL version="0.0.1"
+ LABEL maintainer="godric.phoenix@gmail.com"
+ 
+ WORKDIR usr/share/nginx/html 
+ 
+ RUN apt-get install nginx -y
+ 
+ # Expose port 80
+ EXPOSE 80
+ 
+ COPY index.html  index.html
+
+# if notice that we are not providing any <CMD> command and <RUN> command, coz these commands are already present inside the image. 
+
+# now we need to build the image.
+ $ docker build -t custom-ngnix:0.0.1 ./
+
+# now u need to run this image 
+ $ docker run -d -p 8086:80 custom-ngnix:0.0.1
+
+# let's say we need to update the index.html file again, do it but u need to build the image again.
+
+# now we have an assignment for the topics above.
+ - create dockerfile
+ - get the latest python image from docker repo.
+ - write down a simple python program 
+ - run python program inside the container
+ - tag and push the image to the docker hub
+ - remove image from local and again  execute it from hub.
+
+# let's start to resolve the assignment above 
+ - let's build the dockerfile first:
+	# Each instruction in this file generates a new layer that gets pushed to your local image cache
+	FROM python:latest
+	
+	# Identify the maintainer of an image
+	LABEL version="0.0.1"
+	LABEL maintainer="godric.phoenix@gmail.com"
+	
+	# Add python script
+	ADD my_script.py /
+	
+	# Execute python script
+	CMD [ "python","./my_script.py" ]
+
+ - now let's create the python script file <my_script.py>:
+	n=15
+	for i in range (0,n):
+	    print(((n-(i+1))*' ')+(((2*i)+1)*'*'))
+	for i in range (1,n):
+	    print(((i)*' ')+(((((n-i)*2)-1)*'*')))
+ 
+ - let's create the index.html file:
+	<h1>Hello World, Mustafa Here</h1>
+	<h3>Please advise that this is the dockerfile assignment</h3> 	
+
+# now let's build our image:
+	$ docker build -t custom-python:0.0.1 ./
+# now run the image
+ $ docker run custom-python:0.0.1
+
+# now after we ensure that our image had been build successfully and the script running successfully as well we'll remove it
+ $ docker image rm -f custom-python:0.0.1
+
+# now lets creat it again 
+ $ docker image build -t mustafakamil/python_program:0.0.1 ./
+
+# login to docker
+ $ docker login
+
+# now we need to push our image to hub.docker.com
+ $ docker push mustafakamil/python_program:0.0.1
+
+# at this point we have image in our docker hub, let's remove it from our local machine and try to run our image again.
+ $ docker image rm mustafakamil/python_program:0.0.1
+ $ docker run mustafakamil/python_program:0.0.1    ---> it will download it from hub coz we already delete it from local machine.
+
+
+------------------------------------------------------------Docker Data Management----------------------------------------------
+
+
+# we will take the topics below 
+ - contanier data management
+ - persistent data
+ - data volumes
+ - bind mount points in containers.
+
+# the first issue we will talk about is the < container persistent data problem>.
+# containers are immutable, once deploy never change, only re-deploy
+
+# configre, change or version upgrade need redeploy.
+# by default all files created inside a container are stored on a writable container layer.
+
+# regarding to the previous point ther data doesn't persisit when that container no longer exist and it can be difficult to get the data out of the container if another process needs, this problem is known as <container persistent data problem>
+
+# we have 2 solutions for this problem 
+ - volumes
+ - bind mounts
+
+ * let's talk about <volumes>: 
+  i. volumes are stored in a part of the host filesystem which is managed by docker.
+  ii. volumes are created and managed by containers.
+  iii. volumes can be created by volume command in docker file.
+  iv. when u create a volume it is stored within a directory on the docker host machine.
+  v. volumes can not be removed when user destroy the containers.
+
+ - now we need to pull mysql image from docker hub, search for the official one, check the image file and u can see there's 
+   VOLUME command in it :)
+   $ docker pull mysql  --> will pull the latest official image from docker hub.
+
+   $ docker inspect mysql:latest  --> inspect the image, u will find Key like <Volumes>
+
+   $ docker run -d --name mustafadb -e MYSQL_ALLOW_EMPTY_PASSWORD=TURE mysql  <-- to run container with mysql image
+
+   $ docker ps  <-- to check the container that we just spin out.
+   $ docker container inspect mustafadb   <-- inspect the container and look for Volumes commands. 
+
+   # for the commands above u'll see there's Volumes command as well u'll see Mount commands. 
+   
+   # in Mounts command u'll see "Destination": "/var/lib/mysql"
+   # as well this part "Source": "/var/lib/docker/volumes/#### etc./_data  <-- this mean by default this continer is writing data to this location.
+   # to check this just cd to this location above.
+   $ cd /var/lib/docker/volumes/44f60db531b5a10290f386c67f9504ccbafa8a7b494c4f65a5a3faa970f7085b/_data    <-- if available.
+
+   # to list all volumes had been created
+   $ docker volume ls
+
+   # let's stop the container above and see what will happen for the volumes :)
+   $ docker stop mustafadb
+
+   # u'll see the volume still exist, to inspect a particular volume use it's id.
+   $ docker inspect 1b1e402cabd441c6b6867fbc954b2ff3f59211ea5e71a07592b22ba926c1b718
+
+   # now if we decide to create a custome volume for a particular container, we will use the same run command above but we will insert volume inside it.
+
+   $ docker run -d --name mustafadb2 -e MYSQL_ALLOW_EMPTY_PASSWORD=TURE --mount source=mustafadb2,destination=/var/lib/mysql mysql
+
+   # by this approach even if u wanna to stop old container and start new version u can attach a specific volume to the new container.
+
+   $ docker run -d --name mustafadb3 -e MYSQL_ALLOW_EMPTY_PASSWORD=TURE --mount source=mustafadb2,destination=/var/lib/mysql mysql
+
+   # in the command above we start another container with the same volume :)
+
+ * now let's talk about bind mounts:
+
+  i. Bind Mounts: means a file or directory on the host machine is mounted into container.
+  ii. mapping of host files into a container files.
+  iii. bind mounts may be stored anywhere on the host system.
+  iv. non-docker process on the docker host or a docker container can modify them at anytime.
+  v. bind mount can't be use in dockerfile  <-- :(
+  vi. it's very useful to share configuration files from the host machine to containers.
+  vii. sharing source code or build artifacts between a development environment on the docker host and a container.
+
+ - now we need to start nginx with bind mount command
+  # docker container run -d --name nginx --mount type=bind,source=$(pwd),target=/app nginx    # pwd will give you the current directory. / no spaces in mount parameteres.
+  
+  # source -> path on the host machine that you want to mount
+  # destination -> path inside the container where the host path will be mounted.
+
+  $ docker run -d --name nginxbind --mount type=bind,source=$(pwd),target=/app nginx
+  OR
+  $ docker container run --detach --name pyserv1 --network mustafa --mount type=bind,source=$(pwd),target=/image1 mypy:0.0.2
+
+  # to check if our work correct we need to execute some commands on the container.
+  $ docker exec -it nginxbind bash    --> it will enable us to use bash inside the contaienr.
+  $ ls  --> u'll find the app directory.
+
+  # login to the app folder and check if there's any file.
+  # now on ur host machine go to the dockerbind folder and create new file.
+  $ echo "Hi, This is customfile" > test.txt
+
+ - now we have an assignment for Volume:
+  > DataBase Upgrade with Volumes in Containers 
+  > Create mysql container with some specific version with Volume named mysql-db
+  > After Starting the Container Verify Container Status Go to Database and Create Some Data 
+  > Stop and remove the Container 
+  > Strat new MqSQL Container with existing Volume and Verify the Data.
+
+
+ - assignment answers: 
+  > check how many containers we have
+   $ docker ps -a  --> must we see at STATUS --> Exited
+  
+  > to remove all unused containers, Images and networks
+   $ docker system prune
+  
+  > to remove all unused volumes
+   $ docker system prune --volumes 
+   $ docker system prune --volumes
+  
+  > to remove all unused images 
+   $ docker system prune -a
+
+  > to remove all unused networks
+   $ docker network prune 
+
+  > create new sql container
+   $ docker run --name=test-mysql --env="MYSQL_ROOT_PASSWORD=mypassword" mysql:8.0  
+   # the line above will not work in detach mode
+
+  > the above command will run the container but not with not a user defined volume, we need to use defined volume
+   $  docker container run --publish 3306:3306 --name dbserv1 --detach --env="MYSQL_ROOT_PASSWORD=mypassword" --mount source=mysqlVolume,target=/var/lib/mysql mysql
+   # by the way the target that we provide in the command is the same that in the docker file at VOULUME when you use (docker history mysql) :)
+
+  > verify mysql container
+   $ docker ps
+   $ docker inspect test-mysql
+
+  > now we need to create a database server :)
+   1. inspect the container to find the IP
+   2. Get the running port
+   3. install mysql client package
+    $ apt-get install mysql-client  OR in my Mac am using $ brew install mysql
+   
+   4. execute command to login mysql db
+    mysql -u root -p<password> -h <hostIP> -P <port>
+    $ mysql -u root -p mypassword -h 172.17.0.2 -P 3306  
+
+    $ mysql -u root -p  -h localhost --protocol=TCP -P 3306    ---> for mac it's littel different
+    $ Enter password: mypassword 
+
+   5. now we need to create the data base:
+    - CREATE DATABASE databasename;
+    - show databases;  --> to show all available databases
+    - use databasename;  --> to start insert data in our database
+    # Create Table in DataBase
+    - CREATE TABLE Persons ( PersonID int, LastName varchar(255), FirstName varchar(255), Address varchar(255), City varchar(255) );
+    - show tables;
+	# Insert Some Data into the Table 
+	- INSERT INTO Persons (PersonID, LastName, FirstName, Address, City) VALUES (14, 'B. Erichsen', 'Tom', 'Skagen 216', 'Norway');
+	- INSERT INTO Persons (PersonID, LastName, FirstName, Address, City) VALUES (17, 'Zbyszek', 'Wolski', 'Keskuskatu 45', 'Finland');
+    # Verify DataBase
+    - Select * From Persons;
+    # to exit from mysql
+    - exit;
+
+   > now we are ready to stop and remove the container, after that we will create new one with old volume
+    $ docker container stop test-mysql		--> stop container
+    $ docker container rm test-mysql		--> remove container
+    $ docker ps -a
+
+    $ docker run -d --name=test-mysql-2 -p 3306:3306 --env="MYSQL_ROOT_PASSWORD=mypassword" --mount source=mysqldb,target=/var/lib/mysql mysql:latest
+    $ docker inspect test-mysql-2
+
+
+ - assignment for bind:
+  > Start Nginx Container 
+  > Bind Mount the Nginx Container
+  > Edit the Index.html File in Local System (Host Machine) 
+  > Verify the the change on Running Container
+
+ - bind assignment answers:
+  > check if there's any running containers
+   $ docker ps
+  > check ur machine IPs
+   $ ifconfig
+  > spin nginx container
+   $ docker container run -d --name nginx-test -p 80:80 nginx
+  > go to browser and use
+    > 192.168.0.6/index.html
+  > now stop the container and run it again
+   $ docker container stop nginx-test
+   $ docker container start nginx-test
+  > now we need to find where's the index.html file
+   $ docker exec -it ngnix-test bash
+   # path is: /usr/share/nginx/html
+  > now stop the container and remove it
+   $ docker container stop ngnix-test
+   $ docker container rm ngnix-test
+  > run new container 
+   $ docker container run -d --name nginx-bind -p 80:80 --mount type=bind,source="$(pwd)",target=/usr/share/nginx/html nginx
+   $ docker ps
+  > now login to the container
+   $ docker exec -it nginx-bind bash
+  > cd /usr/share/nginx/html/
+  > now in the folder on ur computer create new file
+   $ touch testindex.html
+   # add the content below:
+
+	<!DOCTYPE html>
+	<html>
+	<head>
+	<title>Nginx Sample File</title>
+	</head>
+	<body>
+	
+	<h1>My NGINX File</h1>
+	<p>See I am using Bind Mount in Running Container</p>
+	
+	</body>
+
+# There's an old or legacy method to of mounting volumes using 
+ -v OR --volume
+ -> Syntax: -v [HOST-DIR:]CONTAINER-DIR[:OPTIONS]
+ 
+ $ docker container run -d -v host_volume:/container_data_volume busybox
+
+ $ docker run -d -v /host/path:/container/path:ro busybox  <-- note we using option like ro which mean read only
+ $ docker run -d --mount type=bind,source=/host/path,target=/container/path,readonly busybox
+
+
+--------------------------------------------------------------Docker Compose----------------------------------------------------
+
+# docker compose is like cluster, used to run multiple containers as one service.
+# example for above, when user wanna to run mysql and tomcat in one yaml file instead of starting spreatly.
+
+# we need 3 steps to work with docker compose
+ - define app's env with a dockerfile so it can be reproduce anywhere
+ - define services that make up ur app in docker-compse.yaml so they can run together in an isolated env.
+ - run docker-compose up and compose starts and run ur entire app.
+
+# now to work run the docker compose on linux only we need:
+ - download the neccessary files from github.
+  $ sudo curl -L "https://github.com/docker/compose/releases/ download/1.23.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+ - apply executable permissions to to the file
+  $ ls -lrt
+  $ sudo chmod +x /usr/local/bin/docker-compose
+  $ ls -lrt
+ 
+ - verify syntax.
+  $ docker-compose --version  <----- !
+
+# per docker documents we don't need to install it speratly on machine since it's already installed :)
+
+# let's talking about docker-compose yaml file, it's a yaml formated file used to explain
+ - containers
+ - networks
+ - volumes
+
+# Docker Compose yml file :
+ - Yaml file can be versioned.
+ - Version statement should be the FirstLine of File YML can be used with docker-compose command. Docker-compose.yml is default name of YAML file.
+ - Custom name can be used by command docker-compose -f   -->  docker-compose -f xxx.yml
+
+# let's take a look on docker-compose yaml template
+
+	version: '3' #Specifies the Compose file syntax version. 
+	
+	services: #service is the name for a “Container in production”
+	  servicename: #container service name
+	    image: #optional, specify if build specific
+	    command: #optional, relmand CMD specified in image
+	    environment: #optional, similar to -e in Docker run command
+	    volumes: #optional, similar to --mount in docker run
+	  servicename2:
+	
+	volumes: #Optional, Mounts a linked path on the host machine that can be used by the container.
+	
+	networks: #Optional, Same as Docker Network
+
+# let's convert some docker command used to start new application to docker compose yaml file format:
+
+    version: '3.8' # Specify the version of Docker Compose file
+
+    services:
+      app:
+        image: node:18-alpine # Use the Node.js 18 Alpine image
+        command: sh -c "yarn install && yarn run dev" # Command to run inside the container
+        ports:
+          - "127.0.0.1:3000:3000" # Bind port 3000 on localhost to port 3000 in the container
+        working_dir: /app # Set the working directory inside the container
+        volumes:
+          - .:/app # Mount the current directory to /app in the container
+        environment:
+          MYSQL_HOST: mysql # Environment variable for MySQL host
+          MYSQL_USER: root # Environment variable for MySQL user
+          MYSQL_PASSWORD: secret # Environment variable for MySQL password
+          MYSQL_DB: todos # Environment variable for MySQL database name
+        networks:
+          - todo-app # Specify the network the service should join
+
+    networks:
+      todo-app: # Define the network
+        driver: bridge # Use bridge network driver (default)
+
+
+- the docker compose for the command above will be:
+
+    services:
+      app:
+        image: node:18-alpine
+        command: sh -c "yarn install && yarn run dev"
+        ports:
+          - 127.0.0.1:3000:3000
+        working_dir: /app
+        volumes:
+          - ./:/app
+        environment:
+          MYSQL_HOST: mysql
+          MYSQL_USER: root
+          MYSQL_PASSWORD: secret
+          MYSQL_DB: todos
+
+# another example of docker command to start new application to compose yaml file format:
+
+    docker run -d \
+      --network todo-app --network-alias mysql \
+      -v todo-mysql-data:/var/lib/mysql \
+      -e MYSQL_ROOT_PASSWORD=secret \
+      -e MYSQL_DATABASE=todos \
+      mysql:8.0
+
+- the docker compose will be:
+    # You need to define the volume in the top-level volumes: section and then specify the mountpoint in the service config. 
+    By simply providing only the volume name, the default options are used.
+
+    version: '3.8'
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        networks:
+          todo-app:
+            aliases:
+              - mysql
+        volumes:
+          - todo-mysql-data:/var/lib/mysql
+        environment:
+          - MYSQL_ROOT_PASSWORD=secret
+          - MYSQL_DATABASE=todos
+    
+    networks:
+      todo-app:
+        driver: bridge
+    
+    volumes:
+      todo-mysql-data:
+    
+    
+
+# now we will start building yaml file: 
+
+    version: '3' # Version of Docker Compose file
+    
+    services:
+      db:
+        image: mysql:5.7 # Use MySQL version 5.7 image
+        volumes:
+          - db_data:/var/lib/mysql # Mount the volume 'db_data' to persist database data
+        restart: always # Always restart the container if it stops
+        environment:
+          MYSQL_ROOT_PASSWORD: mypassword # Root password for MySQL
+          MYSQL_DATABASE: wordpress # Database name to be created
+          MYSQL_USER: wordpressuser # Non-root user to be created
+          MYSQL_PASSWORD: wordpress # Password for the non-root user
+    
+      wordpress:
+        image: wordpress:latest # Use the latest WordPress image
+        depends_on: # Ensure the 'db' service is started before 'wordpress'
+          - db
+        ports:
+          - "8098:80" # Map port 8098 on the host to port 80 in the container
+        restart: always # Always restart the container if it stops
+        environment:
+          WORDPRESS_DB_HOST: db:3306 # Hostname and port of the database
+          WORDPRESS_DB_USER: wordpressuser # Database user for WordPress
+          WORDPRESS_DB_PASSWORD: wordpress # Password for the WordPress database user
+    
+    volumes:
+      db_data: # Define the 'db_data' volume for persisting MySQL data
+    
+
+
+# now we need to change the privilage for the file
+ $ chmod 777 docker-compose-yaml.yml 
+
+# now run the yaml file
+ $ docker-compose up -d
+ $ docker ps
+
+# to see the wordpress page
+ > https://localhost:8098/wordpress
+
+# now to see the log of a specific container
+ $ docker container logs d048df63d297    <--- container id
+ $ docker container logs -f d048df63d297  <-- in running mode
+ 
+# to stop containers had been created by docker-compose
+ $ docker-compose down
+
+# if we need to use a specific yaml file for example <myfile.yml> in this case we will use the command like:
+ $ docker-compose -f myfile.yml up -d
+
+# and to stop the compose above 
+ $ docker-compose -f myfile.yml down
+
+# Postgres port = 5432
+
+# if u use name of a volume that is not exist yet, u'll get error, so u need to create that volume first :)
+ $ docker volume create --name=<volumename>
+
+# check the volume
+ $ docker volume ls
+
+# full application docker-compose file <Custome-Application.yml>
+
+    version: '3' # Specify the version of Docker Compose file format
+
+    services: # Each entry in the services section will create a separate container when docker-compose is run
+      distro:
+        image: alpine # Image to be downloaded at runtime
+        restart: always # Directive to always restart the container
+        container_name: Custom_alpine # Override the randomly generated container name
+        entrypoint: tail -f /dev/null # Keep the container running indefinitely
+        
+      database:
+        image: postgres:latest # Use the latest PostgreSQL image
+        restart: always # Directive to always restart the container
+        container_name: postgres_db # Override the container name
+        ports:
+          - "5432:5432" # Map port 5432 of the host to port 5432 of the container
+        volumes:
+          - ../dump:/tmp/ # Mount a directory from the host to the container
+        
+      web:
+        image: nginx # Use the latest Nginx image
+        restart: always # Directive to always restart the container
+        container_name: nginx_web # Override the container name
+        ports:
+          - "8094:80" # Map port 8094 of the host to port 80 of the container
+        volumes:
+          - ./mysite.template:/etc/nginx/conf.d/mysite.template # Mount the Nginx configuration template
+        environment:
+          - NGINX_HOST=sampl.com # Set environment variable for Nginx host
+          - NGINX_port=80 # Set environment variable for Nginx port
+        links:
+          - database:db # Link to the database container
+          - distro # Link to the distro container
+
+    volumes:
+      data:
+        external: true # Use a pre-existing external volume
+
+
+# commands 
+
+- docker-compose up -d (where -d is run containers in detach mode) to start new containers,
+- re-run the docker-compose up -d command, and recreate the container from scratch (if the config file has been changed)
+- docker-compose up -d   --> can be used to replace the container with the latest version. 
+- docker-compose restart --> is used to restart a container that is currently running. The restart command will simply restart an existing container.
+- docker-compose stop    --> will stop a running container without destroying the container. Similarly, 
+- docker-compose start   --> will start the container up again.
+- docker-compose down    --> will stop the running containers and also destroy them. This is where having bind mounts of volumes come into play.
+- docker-compose pull    --> will pull the current version of the docker image (or images) off the repository. If using the latest tag,
+- docker-compose pull    --> is a convenient way to update containers quickly with minimal downtime. 
+- docker-compose ps      --> will show you running container 
+
+- docker-compose logs    --> will show the logs of the running (or stopped) container. 
+- docker-compose logs -f --> will show the logs and use -f for follow
+
+- docker-compose logs -f --tail 100 --> to grab the latest 100 lines
+- docker-compose logs <container name>   --> will show logs for a specific container.
+	
+
+--------------------------------------------------------------Docker Swarm------------------------------------------------------
+
+# Swarm is used to cluster our containers by using multi physical or virtual machines that host docker subsequently containers.
+# why we need to cluster our containers? 
+ - used to scale up our infrastructure when needed.
+ - manage containers and re-create containers if they failed/crushed
+ - upgrade services with zero down time.
+ - manage containers on vms. nodes.
+
+# docker swarm: is clustering and scheduling tool for docker contaienr.
+# swarm is docker's native support for orchestrating clusters of docker engins.
+# orchestrator: define nodes, define services, set how many nodes you run and where.
+# so at high level swarm take multiple docker engins running on different hosts and let's you use them together.
+
+# docker swarm consist of 2 types of nodes
+ 1. master (manager)
+ 2. worker
+
+# every swarm start with one manager designated as leader
+# swarm is highly available - using Raft algorthim
+
+# Raft algorthim is simple if we have 3 nodes A, B and C. 
+# A will be the master node, it's constantly check in with it's fellowers' nodes and syncing thier states. 
+# if A go down, then B will be the master
+# if A after while get back online, it will be down grade to be a worker (fellower) and B stay master
+
+# swarm features:
+ 1. Task scheduling: 
+    suppose we have a service (like an application in python do only thing is ping for example) we need to deploy 
+    it on a stack on swarm, we will cerate a stack of services in a swarm and u'll provide swarm with important information about:
+  - how actually u want service to be run this include parmeters like:
+   i. how many replicas u wanna on each service.
+   ii. how the replicas should be distributed.
+   iii. when should be run on certain node and mode.
+  - when the services deploy now it's job of manager to ensure deployment requirements u set continue to meet.
+  - that's mean if any container go down, another one will be spin up.
+  - example: if in the plan we need 3 replicas for a service and one go down the responsibility to spin up a new container.
+ 2. load balancing: master will serve the traffic as well manage workers, workers serve the traffic with master.
+ 3. Rolling update: if we have a bug or issue with containers, swarm will help us to patch update for the running continaers, user not impacting, if u wanna to patch update, so if u have 10 containers (one service) then 2 for ex will go down and new 2 with upate will spin up, and finally u have 8 with old update and 2 with new update and so on till all updated.
+
+ 4. security: when a node joins the swarm it will be used a token that had been encrypted by the swarm itself.
+
+# swarmkit: it's the cluster management and orchestration features embedded in the docker.
+
+# Host: docker host can be:
+ - manager
+ - worker
+ - both manager and worker at the sametime.
+
+# Service: when u create a service, u define:-
+ - it's optimal state
+ - number of replicas.
+ - network
+ - storage resources available
+ - ports
+ - and more :)
+
+# Task: it's a running container which is part of a swarm service and managed by a swarm manager, in another word (Task is a part of service), it's carried docker container and the commands to run inside the container.
+ - once task is assigned to a node, it cannot move to another node.
+
+# Nodes: it's an instance of the docker engine participating in the swarm.
+
+# usually in production swarm it's include nodes distributed across multiple physical and cloud machines.
+
+# to deploy ur application to a swarm --> submit service defenition to --> manager node --> dispaches units of work (tasks) to --> worker noeds
+
+# manager node also perform the orchestration and cluster management functions required to maintain the desired state of the swarm. 
+# the manager node elect a single leader to conduct orchestration tasks.
+
+# worker nodes: they receive and execute tasks dispatched from manager nodes.
+
+# services: it is the definition of the tasks to execute on the manager or worker nodes.
+
+
+------------------------------------------------------Create service on Docker Swarm -------------------------------------------
+
+# check if there's any docker running
+$ docker container ls
+
+# now check docker information, this command will display all information about ur docker engin 
+$ docker info
+
+# check the info u got and u'll find this field <Swarm: inactive> that's mean swarm need to be initilized :)
+
+# to initilize docker swarm on a machine u need to apply
+$ docker swarm init    <-- in dome cased it will work and sometimes it's failed, in my laptop it's working and got:
+
+	Swarm initialized: current node (q16zevxite4c0u5ex6y9yscrs) is now a manager.
+	
+	To add a worker to this swarm, run the following command:
+	
+	    docker swarm join --token SWMTKN-1-5gbw9s5q26oq5t45qu4e7s7eziomvc9srtiny6o996sa9hn9zn-7r3cy9qkaqsgpq3sn0cfly55z 192.168.65.3:2377
+	
+	To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.
+
+# if u run the command above on a cloud machine and that cloud have multiple IP layers on eth0, or multiple interfaces.
+ 1. check the ip using: $ ifconfig  --> to get the ip u can use --> X.X.X.X
+ 2. use initilize command again 
+  $ docker swarm init --advertise-addr X.X.X.X 
+
+# all the information u got after initilizing the swarm available in < docker info > except the token :)
+
+# for any help required for swarm
+$ docker swarm --help
+
+# if u wanna help with service command for example
+$ docker service --help
+
+# so let's make a small list of some commands that we work with:
+ > initilize docker swarm
+  $ docker swarm init
+ > docker swarm commands
+  $ docker swarm --help
+ > docker service commands 
+  $ docker service --help
+ > create docker service
+  $ docker service create <image>
+ > list all running services in docker Host
+  $ docker service ls
+
+# ex: suppose we wanna to create a service and in that service we need to ping google.
+ $ ping www.google.com
+
+# now to create service that ping a website 
+ 1. we need to set O.S. for the container/s that will be used for this particular service.
+  $ docker service create alpine ping www.google.com
+  # so the command above will create a service which will install the alpine latest image and execute ping command on this particular service.
+ 
+ 2. to list all services running 
+  $ docker service ls
+  # u will see in this command the ID is different from the container id that u got, yes this is the service id.
+  # Replicas 1/1 --> the right side show how many replicas was configured and the left side show how many repl. running
+ 
+ 3. to inspect the service.
+  $ docker service inspect <service name/service id>
+ 
+ 4. to see which container exactly running ur service on docker machine.
+  $ docker service ls  <-- to get the name of the service or the id
+  $ docker service ps <service name/id>
+  $ docker container inspect <container name/id>
+  # u will see in the json result this output
+  	"Cmd": [
+  	              "ping",
+  	              "www.google.com"
+ 
+ 5. so what we do is we start a service --> this service start container --> container run Task (ping)
+
+# let's now working on how to scal up the services
+ $ docker service update <service_name> --replicas <number of service>
+ $ docker service update interesting_proskuriakova --replicas 4
+ $ docker service ps <service name>
+ $ docker service ps interesting_proskuriakova
+
+# let's now try to stop one of the containers 
+ $ docker container rm -f <container name/id>
+ $ docker container ls
+ $ docker container rm -f interesting_proskuriakova.3.jqvja4v134t9crav635lwvgiy
+ $ docker service ls
+ $ docker service ps interesting_proskuriakova
+
+------------------------------------------------------- Create Docker Swarm Cluster --------------------------------------------
+
+# Create Docker Swarm Cluster mean create new docker nodes, create docker swarm service on single node which's called master and then we'll attached other nodes to the master.
+
+# we have multiple options to build cluster: 
+ 1. go to this url <https://labs.play-with-docker.com/> , this site provide run machine on demand. but they will be available only for 4 hours.
+
+ 2. docker machine + virtualbox
+ 3. digital ocean + docker install.
+ 4. rollout machine on cloud like aws, google, azure, do ...etc.
+
+# we will go with digital ocean
+ - create --> droplets --> ubuntu 18.04.3 64  --> create
+ 					  |- starter: standard
+ 					  |- $5 plan
+ 					  |- DC: san francisco
+ 					  |- 3 droplets
+
+ - now to access any of these machines copy the ip, for example we're going to access the second machine.
+  $ ssh root@167.99.166.36  u'll get the password on ur email
+ - then u'll need to reset the password
+ - repeat the process above with other machines.
+ - if u wanna to check in which device u r use
+  $ hostname.
+ - now we need to install docker on all 3 machines.
+  1. sudo apt-get update
+ 
+  2. sudo apt-get install \
+  	 apt-transport-https \
+  	 ca-certificates \
+  	 curl \
+  	 software-properties-common
+   
+  3. curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+   
+  4. sudo add-apt-repository \
+     "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+     $(lsb_release -cs) \
+     stable"
+  5. sudo apt-get update
+  6. sudo apt-get install docker-ce
+  7. docker version
+ - commands to install docker machine
+    1. base=https://github.com/docker/machine/releases/download/v0.14.0 && curl -L $base/docker-machine-$(uname -s)-$(uname -m) >/tmp/docker-machine &&
+    2. sudo install /tmp/docker-machine /usr/local/bin/docker-machine
+    3. docker-machine version
+ - to install docker compose
+    1. sudo curl -L https://github.com/docker/compose/releases/download/1.22.0/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose
+    2. sudo chmod +x /usr/local/bin/docker-compose
+    3. docker-compose --version
+
+ - we need to check the docker swarm if it's active in the new nodes
+  $ docker info
+
+ - to initilize swarm in the new nodes
+  $ docker swarm init --advertise-addr <ip of the eth0>
+
+ - now our task is:
+  i. create for node docker swarm cluster
+   > we need to find the token for the node we wanna to make it a manager.
+    $ docker swarm join-token manager
+   > copy the result and past it in the other 3 nodes, that they will serve as worker.
+    $ docker swarm join --token SWMTKN-1-5gbw9s5q26oq5t45qu4e7s7eziomvc9srtiny6o996sa9hn9zn-dpnp7c7v6p5v39gx08d3gf00k 192.168.65.3:2377
+   > docker node ls   
+    # the one that we copy the token from will be the leader. :)
+
+   > sometime u'll get this error: 
+    Error response from daemon: This node is already part of a swarm. Use "docker swarm leave" to leave this swarm and join another one.
+    # this message mean u need to leave from the old swarm, that had been created when initilizing the swarm.
+     $ docker swarm leave -f
+     $ docker node ls
+   > now check the worker nodes, u can see there's no any container running.
+   > now we need to create a service in the manager
+    $ docker service create --replicas 8 alpine ping www.google.com  OR
+    $ docker service create --name my_nginx --replicas 3 -p 80:80 nginx      <-- great one for test
+
+    $ docker service ls
+    $ docker service ps <service name>
+    $ docker service ps sleepy_easley
+
+   > check ur nodes now :) 
+   
+   > becarful when you remove any node, espcially the leader this will distroy the swarm.
+
+  ii. switch manager node in docker
+   $ docker node promote <node_name>
+  
+  iii. to swich container back to worker
+   $ docker node demote <node_name>
+  
+  iv. get token at run time
+   $ docker swarm join-token manager
+
+  v. to delete service 
+  $ docker service rm <service_name>
+ 
+
+----------------------------------------------------- Docker Swarm Features and App. -------------------------------------------
+
+# docker swarm has new network driver <overlay network>
+# overlay network driver creates a distributed network among multiple docker hosts.
+# overlay network is allow containers to communicate inside the single swarm < it look like vlan>
+
+# when u init a swarm or join a docker host (physical or virtual) to a swarm, 2 new networks will be created on that host:
+ 
+ 1. ingress: it's an overlay network, which handles control and data traffic related to swarm services.
+ 	- so all services running a single docker swarm will communicate with the help of ingress
+ 	- ingress overlay network will only work if u not attaching the (swarm service) with a user defiend overlay netwok.
+
+ 2. bridge network: it's called <docker_gwbridge> which connect the individual docker node to the other node participating in the swarm
+
+# Rules to when define overlay network:
+ 1. few ports need to be empty in the docker host machine. these ports need to be open to traffic <to and from> each docker host participating on an overlay network.
+               __ TCP port 2377 for cluster management communications.
+              |
+ 	- ports ----  TCP and UDP port 7946 for communication among nodes.
+ 			  |
+ 			  .-- UDP port 4789 for overlay network traffic.
+
+ 2. before create an overlay network, docker swarm must be initilized on node or join it to an existing swarm.
+
+# to create an overlay network.
+ > docker network create -d overaly <network_name>
+ 
+ $ docker info  <-- to check if the swarm had been initilize in this host.
+ $ docker network ls  <-- to check the networks
+
+ $ docker network create -d overlay mustafa_overlay  <-- create user defined overlay netowrk.
+
+# let's create a service now and attached it to user-defined overlay network
+ $ docker service create --name postgress --network mustafa_overlay -e POSTGERS_PASSWORD=mypassword postgres:10
+ $ docker service ls
+
+# now we will create another service and also attache it to user defined network.
+ $ docker service create --name mydrupal --network mustafa_overlay -p 80:80 drupal
+
+# if we need to remove un-used service 
+ $ docker service rm <service name>
+
+# now let's verify where my service running
+ $ docker service ps <service name>
+ $ docker service ps new-postgress
+ $ docker service ps mydrupal
+  - u can use node ip on ur browser to see how drupal working.
+  - to setup the Drupal --> save and continue --> standard --> postgresSQL
+  														   |-  database name: postgres  (any name)
+  														   |-  database uname: postgres
+  														   |-  database pass: mypassword (the pass when u run the service.)
+  														   |-  advanced options: --> host: new_postgress  <-- db service name
+  														   |-  configure site .- sitename: www.testme.cm
+  														   					  |- site email: godric.phoenix@gmail.com
+  														   					  |- site maintenance: .- uname: mustafakamil
+  														   					  					   |- pass: ******
+  														   					  					   |- country: usa
+  														   					  					   .- time: chicago
+ - now if u copy another ip of any droplet and use browser u will get the same result (dropal site)
+ - although it had been run on a single node but it can be accessed from another nodes :)  <-- loadbalancer effect
+
+# Routing Mesh: it's an algorthim used by swarm for global traffic management.
+
+# let's take a look on how the Routing mesh working: 
+ - docker swarm publish service on some ports and allow outer world to access these services, this called <ingress routing mesh>
+ - The routing mesh enables each node in the swarm to accept connections on published ports for any service running in the swarm, even if there’s no task running on the node, with the help of swarm load balancer. 
+ - The routing mesh routes all incoming requests to published ports on available nodes to an active container.
+ - the command we just executed to create drupal service : 
+  $ docker service create --name mydrupal --network mustafa_overlay -p 80:80 drupal
+
+   - if u take a look on this part of command: -p <published_port>:<container_port> 
+
+    i. The <PUBLISHED_PORT>is the port where the swarm makes the service available.
+    ii. The <CONTAINER_PORT> is the port where the container listens.
+
+   - Routing mesh listens on the published port for any IP address assigned to the node.
+ - to verify Service Published Port:
+  > docker service inspect --format="{{json .Endpoint.Spec.Ports}}" <Service_Name>
+
+# assignement: deploy multi node service
+ 1. we will use distribute voting app.
+ 2. the archetict of the app as below:
+
+   .------------.      .------------. 
+   | voting-app |  	   | result-app |
+   |   Python   |  	   |   Node.js  |
+   '------------'  	   '------------'
+		 /			 	   ^
+		/			 	    \
+	   v                     \
+.------------.  	 	.------------.
+|    redis   |  	 	|     db     |
+|    Redis   |  	 	| PostgreSQL |
+'------------'  	 	'------------'
+		   \               ^
+		    \             /
+		     v	         /
+    	    .------------.
+		    |    worker  |
+		    |     .NET   |
+		    '------------'
+
+
+ 3. Service Parts:
+	i. This is 5 Service combination App.
+	ii. vote: front-end that enables a user to choose between a cat and dog
+	iii. redis: database where votes are stored
+	iv. worker: service that get votes from redis and store the results in a postgres database
+	v. db: the postgres database in which vote’s results are stored 
+	vi. result: front-end displaying the results of the vote
+	 
+	- So this is combination of Several docker and compose file. 
+	- Code can view at below location: https://github.com/dockersamples/example-voting-app
+	- App is designed by Docker community and available on Docker Hub for Public use.
+	- The minimum requirements:
+	  > This service need 1 Mount Volume, 2 Network and 5 Stack Services
+	  > Two overlay network you can call front_end_ntw and back_end_ntw is needed.
+	  > Voting App:
+	    - Image : dockersamples/examplevotingapp_vote:before Web front app
+	  	- Publish this on port 5000, Listner Container Port 80 Publish 5+ replicas
+	  	- Publish on front_end_ntw overlay Network
+	 	   
+	  > Redis:
+	  	- Image : redis:3.2
+	  	- Redis is used to Store the Data from Front End Service Publish 5+ replicas
+	  
+	  > Worker:
+	    - Image : dockersamples/examplevotingapp_worker:latest This will process on redis and Store Data in postgres Publish 1+ replicas
+	  
+	  > DB Service:
+	  	- Image : Postgres:9.4
+	  	- Mount Volume and mount to /var/lib/postgresql/data Publish on back_end_ntw network
+	  	- Publish 1+ replicas
+	  
+	  > Result Service:
+	    - Image : dockersamples/examplevotingapp_result:bfore Will display the Voting result
+	    - Publish on back_end_ntw network
+	    - Publish on port 5001, Container port 80
+	    - Publish 1+ replicas
+	 
+
+# now we will resolve the assignment:
+ - let's first check how many nodes we have in this swarm <we build it already in the previous lecs>
+  $ docker node ls
+ - now let's identify how many networks we have.
+  $ docker network ls
+ - now we going to create 2 overlay networks
+  $ docker network create -d overlay front_end_ntw
+  $ docker network create -d overlay back_end_ntw
+ - now we need to work on Vote App:
+  $ docker service create --name vote -p 5000:80 --network front_end_ntw --replicas 5 dockersamples/examplevotingapp_vote:before
+  $ docker service ps vote
+
+ - now we will work with Redis:
+  $ docker service create --name redis --network front_end_ntw --replicas 5 redis:3.2
+  $ docker service ps redis
+
+ - now we will work with worker:
+  $ docker service create --name worker --network front_end_ntw --network back_end_ntw dockersamples/examplevotingapp_worker:latest
+  
+
+ - now we will work with DB:
+  $ docker service create --name db --network back_end_ntw --mount type=volume,source=db-data,target=/var/lib/postgresql/data postgres:9.4
+
+ - now let's working with result service:
+  $ docker service create --name result --network back_end_ntw -p 5001:80 dockersamples/examplevotingapp_result:before
+
+ - now to use the app above, use any ip for the 4 droplets, and for 
+  i. voting ip:5000
+  ii. to see reults ip:5001
+
+----------------------------------------------------- Docker Swarm Stack Feature. ----------------------------------------------
+
+# Stack : Stack is a group of interrelated services that share dependencies, and can be orchestrated and scaled together.
+# A single stack is capable of defining and coordinating the functionality of an entire application.
+# Complex Application may have multiple Stacks as well.
+# Docker Stack uses Compose’s YAML format and complements the Swarm-specific properties for service deployments.
+
+# File Name could be like docker-stack.yml
+# Docker : Docker Swarm
+
+# Build Own Image: Sample_Nginx Project
+# Build Image form Dockerfile 
+$ docker build —t friendly_hello .
+
+# Push image on Docker Hub
+# docker tag <image> <username/repository:tag> docker push <username/repository:tag>
+
+# first u need to download the zip file from the lec, to the download folder and then u need to copy content to the droplet.
+ $ mkdir sample_nginx  <-- on the target machine.
+ $ scp Dockerfile docker-compose.yml app.py requirements.txt root@167.172.206.76:/root/sample_nginx/
+ 
+ $ docker build --tag=friendly_hello:v1.0.1 .
+
+ # when applying the command above, u'll get the message <Successfully tagged friendly_hello:v1.0.1>
+
+ # now we need to push image to the docker hub, so login to docker
+  $ docker login
+  $ docker tag <image> <username/repository:tag>
+  $ docker tag friendly_hello:v1.0.1 mustafakamil/friendly_hello
+  $ docker push mustafakamil/hello_friendly
+
+ # now we will go through docker compose Yaml:
+ # first let's Explore the docker-compose.yml file.
+  i. Pull the Image from Repository.
+  ii. Run 5 instances of that image as a service called web
+  iii. Limiting each one to use, at most, 10% of a single core of CPU time and 50MB of RAM.
+  iv. Immediately restart containers if one fails. Map port 4000 on the host to web’s port 80.
+  v. Instruct web’s containers to share port 80 via a load-balanced network called webnet.
+  vi. Define the webnet network with the default settings, which is a load-balanced overlay network.
+
+	version: "3"
+	services:
+	  # Service Name Defined as web
+	  web:
+	    # Pull the Image from Repository.
+	    # replace username/repo:tag with your name and image details
+	    image: mustafakamil/friendly_hello:latest 
+	    # Command used to deploy the Service
+	    deploy:
+	      # Run 5 instances of that image as a service called web
+	      replicas: 5
+	      resources:
+	        # Limiting each one to use, at most, 10% of a single core of CPU time and 50MB of RAM.
+	        limits:
+	          cpus: "0.1"
+	          memory: 50M
+	      # Immediately restart containers if one fails.     
+	      restart_policy:
+	        condition: on-failure
+	    # Map port 4000 on the host to web’s port 80.    
+	    ports:
+	      - "4000:80"
+	    # Define default network, the overlay network 
+	    networks:
+	      - webnet
+
+	networks:
+	  webnet:
+
+# now we need to deploy the service in docker swarm.
+ $ docker stack deploy -c docker-compose.yml nginx_start    <-- nginx_start is the stack name will be used as prefix
+ 
+ - we don't have the network named <webnet> but when we run the yaml file we got these messages
+	Creating network nginx_start_webnet
+	Creating service nginx_start_web 	
+	# if u notice that it used the service name as prefix :)
+ $ docker network ls
+
+# now to check our stack, 
+ $ docker stack ls
+
+# to list all services for a specific stack
+ $ docker stack services nginx_start  
+
+# A single container running in this Service is called Task. So Single Service can execute multiple Tasks.
+ $ docker service ls
+ $ docker service ps nginx_start_web
+
+# go to digital ocean and copy any ip 
+# use ur browser and > ip:4000
+
+# let's see how we can scale up docker services
+# when we're talking about scale up we mean, increase or decrease services, we are going to increase or decrease the resources for the services as well.
+
+# so u can scale the number of services plus u can scale the number of resources for a partical service
+
+# if u wanna to scale services u can do it by:
+ i. changing the YAML file and redeploy it to reflect changes.
+ ii. add new service in the stack (This option need to add visualizer)
+
+# let's check how many nodes that we have 
+ $ docker node ls
+ $ pwd  ---> to see in which directory we are
+
+# we need to know how many services are running:
+ $ docker service ls
+
+# let's start new stack
+ $ docker stack deploy -c docker-compose.yml nginx_start
+ $ docker stack ls 
+
+# now let's for example trying to scale the service by increasing the replicas #, cpus usage percentage and memory in the docker-compose.yml, to be like this:
+
+version: "3"
+	services:
+	  # Service Name Defined as web
+	  web:
+	    # Pull the Image from Repository.
+	    # replace username/repo:tag with your name and image details
+	    image: mustafakamil/friendly_hello:latest 
+	    # Command used to deploy the Service
+	    deploy:
+	      # Run 5 instances of that image as a service called web, we will scale it up to 6
+	      replicas: 6
+	      resources:
+	        # Limiting each one to use, at most, 10% of a single core of CPU time and 50MB of RAM. scale up to 30% cpu and 100MB
+	        limits:
+	          cpus: "0.3"
+	          memory: 100M
+	      # Immediately restart containers if one fails.     
+	      restart_policy:
+	        condition: on-failure
+	    # Map port 4000 on the host to web’s port 80.    
+	    ports:
+	      - "4000:80"
+	    # Define default network, the overlay network 
+	    networks:
+	      - webnet
+	      
+	networks:
+	  webnet:
+
+# save the change that u did to the file
+# then we need to deploy the command below again:
+ $ docker stack deploy -c docker-compose.yml nginx_start
+
+# u'll see this sentence <Updating service nginx_start_web> that's mean it's scale up the service nginx_start_web
+ $ docker service ps nginx_start_web
+
+# what happen actually is the swarm start stopping containers one by one so the service will not get any downtime and spin up the containers with new configuration one by one also
+# all the node should be able to serve the traffic and load balancer will manage the request as per on algorthim
+
+# now we will test how we can add new service to the stack, but first need to add visualizer, this is a new application which will dispaly you containers running in the docker swarm, manager and the worker node, it's already in the docker hub
+
+# we will modify the yaml code and visualizer and align it to be the same as web.
+
+	  visualizer:
+	    image: dockersamples/visualizer:stable
+	    ports:
+	      - "8080:8080"
+	    volumes:
+	      - "/var/run/docker.sock:/var/run/docker.sock"
+	    deploy:
+	      placement:
+	        constraints: [node.role == manager]
+	    networks:
+	      - webnet
+
+# note that we use constraints , it's this service will execute in the manager node. so by using this command we can define which service will be execute in which node.
+
+# agin update the stack
+ $ docker stack deploy -c docker-compose.yml nginx_start
+ $ docker service ls
+ $ docker service ps nginx_start_visualizer
+
+# to see what new service <visualizer> did
+ > copy ip of any container, go to ur browser and use <ip:4000> u must see ur page.
+ > now use the same ip but with different port <ip:8080>
+
+# in the visualizer u can notice that the visualizer container will be in purple color
+
+# now we will face an issue of the persist data with stack and how we will resolve it :)
+ - the issue occurred because in docker swarm ur container can be executed on any node
+ - if u wanna to make a mount point with the persistent volume, if u define a directory it may possible ur container this time will running with node1 and next time may be running with node2. in this case the persistent data volume will make issue, coz the first time it was running it, that directory that partical volume was created in node1, next time when u start the container it choose the node randomly and in that new node had been chosen there's no directory structure u need.
+ - then the container will start new brand database.
+
+# to resolve the data persistent issue:
+ 1. user can use the volume to define the mount point, user will mount the container directory with local host directory.
+ 2. restrict the service to execute on specific node.
+ 3. for our example we will add redis on existing service.
+
+# now let's add one more service to our docker-compose.yml.
+
+  redis:
+   image: redis
+   ports:
+    - "6379:6379"
+   volumes:
+    - "/home/docker/data:/data"
+   deploy:
+    placement:
+     constraints: [node.role == manager]
+    command: redis-server -- appendonly yes
+    networks:
+     - webnet  
+
+# save update.
+ $ docker stack deploy -c docker-compose.yml nginx_start
+ > u will get this message <Creating service nginx_start_redis>
+ 
+ $ docker service ls
+ # u can see under replicas <0/1> that's mean it's tryin to start redis but it is not able to create it.
+ > this issue because in the yaml file we define the mount point of redis /home/docker  <-- this directory is not present in the host machine.
+ - so to resolve this issue we will replace:
+   volumes:
+    - "/home/docker/data:/data"
+
+   with:
+
+   volumes:
+    - "./data:/data"     <-- access the data from the current directory, where am executing the command.
+
+ # create a data directory 
+  $ mkdir ./data/
+
+ # update service now.
+ # u'll get messages some how like below:
+  Updating service nginx_start_web (id: 0g56lphw0t6xzc0cfavhjbzpu)
+  Updating service nginx_start_visualizer (id: xraykcwlgtmaqpneienllhlg4)
+  Updating service nginx_start_redis (id: kdh0hzqdwz61jk13g3qwfz8nd)
+
+ # in ur browser try to use <ip>:4000 --> u can see there's something different, it's Vistors with # :) before was 
+  > Visits: cannot connect to Redis, counter disabled
+
+ # let's do a test by stop redis service 
+  $ docker service rm nginx_start_redis
+ 
+ # check ur visualizer :)
+ # let's see what inside data folder , u will see this file <appendonly.aof>
+ # let's try to see the vistors again by refreshing the page. 
+  > Visits: cannot connect to Redis, counter disabled
+ # let's start the service again.
+ # check the status again :)
+ 
+
+ # Now we will see how we can deploy distributed application
+ # as u know to distribute any stack the basic thing u need is the YAML file.
+ # this YAML file could be --> compose yaml file
+ 						   |-> stack yaml file 
+
+ # to get the distributed voting app yaml file 
+  > https://github.com/dockersamples/example-voting-app
+
+ # to Get List of Stack running in Swarm 
+  $ docker swarm ls
+ # to Get List of Task Running in Stack 
+  > docker stack ps <Stack_Name>
+ # to Get List of Replicas Running in Service 
+  > docker stack services <Stack_Name>
+
+ # now we will get a copy of the stack yaml file from the link above:
+
+  version: "3"
+  services:
+  
+    redis:
+      image: redis:alpine
+      networks:
+        - frontend
+      deploy:
+        replicas: 1
+        update_config:
+          parallelism: 2
+          delay: 10s
+        restart_policy:
+          condition: on-failure
+  
+    db:
+      image: postgres:9.4
+      volumes:
+        - db-data:/var/lib/postgresql/data
+      networks:
+        - backend
+      deploy:
+        placement:
+          constraints: [node.role == manager]
+  
+    vote:
+      image: dockersamples/examplevotingapp_vote:before
+      ports:
+        - 5000:80
+      networks:
+        - frontend
+      depends_on:
+        - redis
+      deploy:
+        replicas: 2
+        update_config:
+          parallelism: 2
+        restart_policy:
+          condition: on-failure
+  
+    result:
+      image: dockersamples/examplevotingapp_result:before
+      ports:
+        - 5001:80
+      networks:
+        - backend
+      depends_on:
+        - db
+      deploy:
+        replicas: 1
+        update_config:
+          parallelism: 2
+          delay: 10s
+        restart_policy:
+          condition: on-failure
+  
+    worker:
+      image: dockersamples/examplevotingapp_worker
+      networks:
+        - frontend
+        - backend
+      depends_on:
+        - db
+      deploy:
+        mode: replicated
+        replicas: 1
+        labels: [APP=VOTING]
+        restart_policy:
+          condition: on-failure
+          delay: 10s
+          max_attempts: 3
+          window: 120s
+        placement:
+          constraints: [node.role == manager]
+  
+    visualizer:
+      image: dockersamples/visualizer:stable
+      ports:
+        - "8080:8080"
+      stop_grace_period: 1m30s
+      volumes:
+        - "/var/run/docker.sock:/var/run/docker.sock"
+      deploy:
+        placement:
+          constraints: [node.role == manager]
+  
+  networks:
+    frontend:
+    backend:
+  
+  volumes:
+    db-data:
+  
+# let's create file in the node, am using manager, and name it <docker-stack.yml>
+# paste the code above in it
+# run the file using:
+ $ docker stack deploy -c docker-stack.yml votingstack
+
+# now check how many stack running
+ $ docker stack ls
+
+# to see all the tasks related to a service 
+ $ docker stack ps votingstack
+ - docker name and task name are different
+
+# to get all replicas related to a sevice 
+ - docker stack services votingstack
+
+# notice: some time worker replication is not running, and if u open the log of the <worker> u can find some error message
+ $ docker service logs votingstack_worker
+ > errors related to socket exeption sometime. 
+ - this error is related to the .NET framework running inside the worker, microsoft error
+ - to resolve this error go to the yaml file and define instead of 1 replica for the worker use for example 10.   
+
+# now take any ip from the digital ocean and use ur browser.
+ > voting IP:5000
+ > result IP:5001
+
+
+--------------------------------------------- Docker Swarm Secrets: Manage Senstive Data ---------------------------------------
+
+# what is secrets: a secret is a piece of data, such as a password, SSH private key, SSL cretificate, or another piece of data that should not be transmitted over a network or stored unencrypted in a dockerfile or in your application's source code.
+
+# user can manage these senstive data with docker swarm sercrets,
+# docker centrally manage this data and send to only container that need it.
+# docker secrets is only available in the swarm mode.
+# only granted service and containers access the secrets data over the network.
+# container secrets provide a layer of abstraction between container and a set of credentials.
+# when a user adds a new secret to a swarm cluster, this secret is sent to a manager using a TLS connection. 
+# TLS: is a cryptography protocol that provides communication security over a network by providing communication encryption, privacy and data intigrity.
+# when we have multiple managers, RAFT manage the secrets on all the managers.
+# containers work on mounted decrypted secrets, which store at /run/secrets/<secret_name> in containers.
+# User can update a service to grant it access to additional secrets or revoke its access to a given secret at anytime.
+# when container task stops running, the decrypted secrets shared to it are unmounted from the in-memory filesystem for that container and flshed from the node's memory.
+
+# now let's understand the secret command:
+ $ docker secret --help
+
+# there're 2 ways to create secret:
+ - by file: $ docker secret create <secret_name> <file_name>
+ - by cli:  $ echo "secret_string" | docker secret create <secret_name> -
+
+# let's first create a secret dirctory 
+ $ mkdir secretsExample
+ $ cd  secretsExample
+ $ vi dbpass.txt
+   --> for example add test@123  --> :wq
+ $ cat dbpass.txt
+
+ $ docker secret create db_password dbpass.txt   --> by file
+
+ $ echo "db_user" | docker secret create db_username - 
+
+# now to list all secret in ur machine
+ $ docker secret ls
+
+# to inspect a secret:
+ $ docker secret inspect <secret_name>  --> we will get info on the secret not the secret itself
+ 
+ $ docker secret inspect db_password
+
+# to see the history of all commands that u used in the cli use:
+ $ history
+
+# so the method above to create secret is not ideal
+# let's create Postgres service with secrets: 
+ $ docker service create --name <service_naem> --secret <username_secret> --secret <pass_secret> -e POSTGRES_PASSWORD_FILE=run/secrets/ <pass_secret> -e POSTGRES_USERS_FILE=run/secrets/ <user_secret> <IMAGE>:TAG
+
+ $ docker service create --name postgres --secret db_username --secret db_password -e POSTGRES_PASSWORD_FILE=/run/secrets/db_password -e POSTGRES_USER_FILE=/run/secrets/db_username postgres
+
+ $ docker service ls
+ $ docker service ps postgress
+
+# to access the container above
+ $ docker exec -it postgress...... bash
+ $ cd /run/secrets
+ $ cat db_password
+
+# now let's take a look about how to use secret in the docker stack.
+ 
+ - docker compse yaml file:
+version: "3.1"
+services:
+  # Service Name Defined as web
+  postgresDB:
+    # Pull the Image from Repository.
+    image: postgres:latest
+    # Command to use secrects in 
+    secrets:
+      # define Secrets name
+      - db_username
+      - db_password
+    environment:
+        # Define environment varaibles
+        POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+        POSTGRES_USER_FILE: /run/secrets/db_username
+
+  centOS:
+    image: centos
+    deploy:
+      replicas: 1
+    entrypoint: /bin/sh
+    stdin_open: true
+    tty: true
+    secrets:
+      - source: my-secret
+
+
+secrets:
+  db_username:
+    file: ./postgres_user.txt
+  db_password:
+    file: ./postgres_password.txt
+  my-secret:
+    external: true
+
+
+# before implementing the command above, remove the secrets that u created early.
+# now create the required text files mention in the yaml file above
+ $ vi postgres_user.txt
+  --> tkdbowner
+
+ $ vi postgres_password.txt
+  --> tkdbpassword
+
+# now create the docker compose yaml file:
+ $ vi docker-compose.yml
+
+# now let's create the stack
+ $ docker stack deploy -c docker-compose.yml postgresdb
+
+ $ docker stack ls
+ $ docker service ls  ==> u can see under the name column postgresdb_postgresDB --> the first part come from the stack name and the second part come from service name in the yaml file.
+ $ docker stack ps postgresdb
+ $ docker service ps postgresdb_postgresDB
+
+# quick notes, if we using like what we have in centOS --> my-secret which is external (cli base secret) u need to use external : true under secrets section.
+
+ $ docker stack rm postgresdb
+ $ docker stack ls
+ $ docker service ls
+ $ docker secret ls
+ $ docker stack deploy -c docker-compose.yml postgres_os_stack   <-- at this point the stack will not been created we need to do one more thing.
+ $ echo "mytestvalue" | docker secret create my-secret -
+ $ docker secret ls
+ $ docker stack deploy -c docker-compose.yml postgres_os_stack
+ # keep in mind the centos image is heavy so just wait untill it been completed
+
+
+--------------------------------------------------- zero-downtime service upgrade ----------------------------------------------
+
+# this is consider a dream for software companies
+
+# Swarm Help us to Limit the Downtime in Service Update/Upgrade.
+# It’s all become possible with Rolling Upgrade Approach.
+												   .-- take a maintenance window, upgrade service
+# how to upgrade our service or software version --|
+												   .-- take any maintenance window, rolling upgrade (zero downtime upgrade)
+
+# in rolling upgrade we will down a single server upgrade service in this particular server and then attached that server to the production, repeat this process with other servers.
+
+# so in reality we replaced old container with new one,
+
+# to enhance version of our deployed service
+ $ docker service update --image <imagename> <servicename>
+
+# now suppose we need to upate complete stack
+# edit the yaml file and deploy it again
+ $ dodcker stack deploy -c <yml file> <servicename>
+
+# let's start nginx service but with lower version 
+ $ docker service create -p 80:8080 --name <service_naem> <nginx image: version>
+
+ $ docker service ls   --> to check if there's any service still running.
+ $ docker stack rm <service name>
+
+ # let's build our old version nginx
+ $ docker service create -p 80:8080 --name web_server nginx:1.14.2
+ $ docker service ls
+
+ # what's the difference between vertical and horizontal scaling
+  - horizontal : it means we are increasing the number of replicas, number of containers
+  - vertical : upgrading resoureces in the current service, CPUs, RAMs, Hards etc.
+
+ # we will focus on how to scale horizontally.
+  $ docker service scale <service name>=<number of replicas>
+  $ docker service scale web_server=10
+  $ docker service ls
+
+ # all the replicas will run nginx in 1.14.2 version, now we need to upgrade this version to the newest one.
+  $ docker service update --image nginx:1.15.12 web_server
+  # u can notice the rolling upgrade, upgrade containers one by one.
+
+  # to check our work above
+  $ docker service ps web_server
+
+  # if u take a look on the command above results, u can see it's actully replacing old container by new one.
+
+ # now another example, let's say we need to change the ports from 8080 to 9090
+  $ docker service update --publish-rm 8080 --publish-add 9090:80 web_server
+  $ docker service ps web_server
+ 
+ # to stop the service above:
+  $ docker service rm web_server
+  $ docker service ls
+  $ docker service ps web_server
+
+-------------------------------------------------- health check in docker services ---------------------------------------------
+
+# checking resources health
+# health check command:
+ $ HEALTHCHECK [option] CMD <command>: the command that sets the container health check
+
+# if any failed occurred then the swarm will fail the bad container and spin up a new one :)
+
+# Options that we have with healthcheck:
+ ➤ --interval=<interval>: The time interval between two health checks. (The default value is 30 seconds.)
+
+ ➤ --timeout=<interval>: The timeout for running the health check command. The health check fails if the timeout is exceeded. The default value is 30 seconds.
+
+ ➤ --retries=<number of times>: The container status is regarded as unhealthy if the health check fails continuously for a specified number of times. The default value is 3.
+
+ ➤ --start-period=<interval>: The initialization time of application startup. Failed health check during the startup is not counted. The default value is 0 second.
+
+# now let's start with practical example:
+ $ mkdir healthcheck
+ $ cd healthcheck 
+ $ ls
+
+ # let's run new container
+ $ docker container run --name postgres1 -d -e POSTGRES_PASSWORD=mypassword  postgres
+
+ # ok now we need to setup a health check inside postgres <to check if the connection to the database healthy or not>
+
+ $ docker container exec -it postgres1 bash
+  # pg_isready -U postgres   --> we must get some output here.
+  # exit
+
+ $ docker ps
+ 
+ # start another container
+  $ docker container run --name postgres2 -d -e POSTGRES_PASSWORD=mypassword --health-cmd="pg_isready -U postgres || exit 1"  postgres
+  $ docker ps
+
+  # u can see there's new thing in the status ==> (health: starting) as we see here health at starting mode (by default)
+  							   .- starting (helthcheck starting when ever container starting) by default
+  # there are 3 health modes --|- healthy
+  							   .- un healthy
+
+ # let's start another container
+  $ docker container run --name postgres3 -d -e POSTGRES_PASSWORD=mypassword --health-cmd="pg_isready -U postgres || exit 1"  postgres  <-- check the health of the user
+  $ docker ps
+
+  # u can see in the output the old one status (helth:starting) now changed to healthy and the new one status (health:starting) 
+
+# as long as we see helth with container but it's not useful because if there's any issue happen with the container there's nothing to do
+# so the solution is use helth with swarm, if there's any issue with container, service or task, new one will be spin up.
+
+# let's start new service
+ $ docker service create --name postgresservice1 postgres
+ $ docker service ls 
+# now we need to put helth check in our service
+ $ docker container run -d --name postgresservice2 --health-cmd="pg_isready -U postgres || exit 1" postgres 
+ # here we will see a different thing, when we will starting the service it's not comming in the running mode, it still in the starting mode and it will keep in the starting mode up to 30 sec, after this period it will switch to the running mode and then start ur service.
+
+ # why it take 30 secs?
+ # because when we running the helth check inside the docker swarm, it will not accepting the service to running until the first helth check will be passed, by default the interval is 30 sec. at the time of initilization so the next interval will be after 30 sec
+
+
+------------------------------------------------- Docker swarm container placement ---------------------------------------------
+
+# Docker Swarm automatically try and place your containers to provide maximum resiliency within the service.
+# Place the Container on Specific node, for monitoring for application functionality reason. 
+# there're multiple way to achieve our goal
+ 1. service constraints
+
+ - Service constraints are used to control the nodes a service can be assigned to.
+ - Service Constraints can be added to creation time, or add/remove at update time.
+ - By Creation of Hard Coded requirement, container placement fails if not matched. (stuck in bending mode)
+ - Multiple Constraints can be assigned to a single service.
+ - It supports key or key=value pair
+
+# before starting clean service, stop any running services. 
+
+# First Let’s start the visualiser in Docker Swarm
+ $ docker run -it -d -p 8080:8080 -v /var/run/docker.sock:/var/run/docker.sock dockersamples/visualizer
+
+ #what u see in the visualizer u can see it in the cli
+ $ docker node ls
+
+# Create Service on Manager Node Only
+ $ docker service create --constraint node.role==manager <image_name>
+ $ docker service create --constraint node.role==manager postgres
+ $ docker service ls 
+
+ # let's run another service on worker this time
+  $ docker service create --name webserver --constraint node.role==worker --replicas=5 nginx
+
+# what if we need to run a specific app on sepecific node, for ex/ one node have very high cpus and rams, so how we defined these conditions. answer by using lables, so we are tagging our nodes and our services :)
+
+# Add Label on any Node and define Constraints
+ $ docker node update --label-add=region=east-1-d <node_id>
+ $ docker node ls
+ $ docker node update --label-add=region=east-1-d c83....etc  <-- master node id 
+
+ # to check where's our lable
+ $ docker node ls
+ $ docker node ispect <node_id>
+ # take a look in the result u can find there's lable :) 
+ 
+ # now we will start a service in a specific lable (east-1-d)
+ $ docker Service create --constraint node.labels.region==east-1-d <image_name>
+ $ docker Service create --name postgres --constraint node.labels.region==east-1-d postgres
+
+# Remove Constrains and add new constrains on running service
+ $ docker service update --constraint-rm=<Constraint added on service> --constraint-add <new constraint> <service_name>
+ $ docker service update --constraint-rm=node.labels.region==east-1-d --constraint-add node.role==worker podtgres
+
+# now let's know how to define service constraints in dokcer stack file
+ $ docker service ls
+ $ mkdir serviceconstraint
+ $ cd serviceconstraint
+ $ vi docker-compose1.yml
+
+  version: "3.1"
+  services:
+  # service Name Defined as web
+  mysqlDB:
+   # Pull the Image from Repository
+   image: mysql:latest
+   deploy:
+    replicas: 1
+    placement:
+     constraints:
+      - node.lable.region == east-1-d
+
+ $ ls  <-- to see the compse file exist
+
+ $ docker stack deploy -c docker-compose.yml mysql
+ $ docker stack ls
+ $ docker service ls
+
+ # if u see the service in the visulaizer plinking that's mean docker is not able to start this prtical service in health mode, because we didn't defined any enivornment variable in the mysql db. 
+
+  version: "3.1"
+  services:
+  # service Name Defined as web
+  mysqlDB:
+   # Pull the Image from Repository
+   image: mysql:latest
+   environment:
+    MYSQL_ROOT_PASSWORD: "mypassword"
+    MYSQL_DATABASE:"drupal"
+   deploy:
+    replicas: 1
+    placement:
+     constraints:
+      - node.lable.region == east-1-d
+
+# replace the yaml file
+# now remove the stack
+ $ docker stack rm sql
+
+ $ docker stack ls
+
+# now apply the stack yaml file again.
+ $ docker stack deploy -c docker-compose.yml mysql
+ 
+
+============================================================= End Of Docker ======================================================

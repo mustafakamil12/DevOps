@@ -1,0 +1,8 @@
+# important terms in that introduce by the Dark Lunching Technique and they lie at the heart of the devops
+# also called DevOps life cycle phases
+#- continuous monitoring	
+#- continuous development	
+#- continuous testing		
+#- continuous integration
+#- continuous deployment
+

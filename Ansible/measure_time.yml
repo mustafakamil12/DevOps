@@ -1,0 +1,48 @@
+---
+- name: Measure Time Elapsed
+  hosts: localhost
+
+
+
+  tasks:
+   - name: Record start time
+     set_fact:
+       start_time: "{{ ansible_date_time.iso8601 }}"
+     delegate_to: localhost
+     run_once: true
+
+
+   # Your tasks go here
+   - name: Your Task 1
+     ping:
+     delegate_to: target1
+     run_once: true
+
+   - name: Pause for 5 seconds
+     pause:
+       seconds: 15
+
+   - name: Your Task 2
+     ping:
+     delegate_to: target2
+     run_once: true
+
+     # Add more tasks as needed
+
+
+   - name: Record end time
+     set_fact:
+      end_time: "{{ ansible_date_time.iso8601 }}"
+     delegate_to: localhost
+     run_once: true
+
+       #- name: Calculate time elapsed
+       #set_fact:
+       #time_elapsed_seconds: "{{ end_time | int - start_time | int }}"
+       #delegate_to: localhost
+       #run_once: true
+     
+   - name: Print time elapsed
+     debug:
+      msg: "Time Elapsed: {{ (end_time | to_datetime('%Y-%m-%dT%H:%M:%S') - start_time | to_datetime('%Y-%m-%dT%H:%M:%S')).total_seconds() }} seconds"
+     run_once: true

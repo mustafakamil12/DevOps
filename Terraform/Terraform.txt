@@ -1,0 +1,280 @@
+
+=================================================================== Terraform ====================================================
+
+# it's an open source tool had been developed by HashiCorp,
+# it's help you u to automate the implementation of the entire infrastructure using code.
+
+# the first thing that u need is to write the configuration terra file and it's <.tf>, which use a hcl language <HashiCorp Configuration Language>
+
+# terraform have 3 steps to do in order to build the infrastructure
+ 1. check against the current infrastructure
+ 2. what resources required 
+ 3. list out the resoureces the u need to create.
+
+# if u trying to modify the current infrastructure, terraform will use to mostly the same steps.
+ 1. compare the current infrastructure with what's new in the new configuration file.
+ 2. apply changes.
+
+# after installing terraform, u need to create a user in aws with proper authientication for terraform use.
+--> aws --> IAM --> users --> add user --> <terraform-user> --> select proper group.
+
+# next step u need to download, install and configure awscli. --> check the aws lessons :)
+
+# now u need configure the profile in aws for <terraform-user> as below.
+
+$ aws configure --profile terraform-user
+
+ 1. AWS Access Key ID [None]: 
+ 2. AWS Secret Access Key [None]: 
+ 3. Default region name [None]: us-east-1
+ 4. Default output format [None]: 
+
+# now after we done with all required setting for terraform, we need to select the folder that will be our project folder.
+ $ mkdir terraform
+ $ touch production-application.tf
+
+# go to terraform website --> docs --> provider --> in our example we are going to use shared credentials example.
+
+# in our example where we create the <production-application.tf> in this path we need to use this command
+ 
+  $ terraform init  --> to initilize the provider plugins and it will create folder with required configuration
+
+# in our example we are not going to create the entire infrastructure as in the diagram, but we will do some of them.
+
+# for example for load balancer we can go to the terraform site and look into the docs for <aws_alb>.
+
+# btw in our example we didn't create the security group, we need to put this automatically in the code.
+
+# for vlsm u can use this online calculator <http://www.vlsm-calc.net/>
+
+# our example used from terraform course -- > section 2 --> lesson 3 and 4
+
+# we will work with an example from the youtube to mix terraform and jenkins... :)
+
+# requirements:
+
+ - Workspace Cleanup Plugin
+ - Credentials Binding Plugin
+ - AnsiColor Plugin
+ - GitHub Plugin
+ - Pipeline Plugin
+ - CloudBees AWS Credentials Plugin
+
+
+ # we need to create some creds before start working on the project...
+ tomcat --> username/password
+ github --> secret text
+ aws    --> aws credentials
+ github --> username/password
+
+
+
+<Terraform> configuration:   <-- Multibranch Pipeline
+ - Branch Sources -- Github -- Credentials --> ur creds to login to Github in format of username/password
+ 						    |- Repository HTTPS URL -- https://github.com/mustafakamil12/mygitops.git
+ 						    |- Property strategy -- all branches get the same properties
+
+ - Build Configuration -- Mode -- by jenkins
+     				   |- script path -- Jenkinsfile
+
+ - Orphaned Item Strategy -- Discard old items -- true
+
+
+
+-----------------------------------------------------------Terraform with DigitalOcean--------------------------------------------
+
+Terraform with droplets - digitalocean
+
+# first check if terraform had been installed in ur computer
+ $ terraform
+ 
+# make authentication with digitalocean which mean between terraform and digitalocean account
+# at this point we are looking for a token file
+# go to digitalocean --> API --> generate new token --> <give a name> --> copy ur token 
+d38f2bad15827c7d777d9dc2e5fa9709fa16ace468c2cc0e2f7ec24623d41d11  --> work computer
+fdaf9ff9d3b4f0ce16acfd87bcee1bc1af3c00d4129885e53d470e40f465bffd  --> Mac
+
+# u can use terraform documents to get the right resources for digitalocean as below:
+
+	variable "do_token" {}
+	provider "digitalocean" {
+	token = "${var.do_token}"  //referencing the token you exported using var
+	}
+	
+	resource "digitalocean_droplet" "terraform" {   //terraform is a name of the droplet
+	image  = "ubuntu-18-04-x64"
+	name   = "terraform-droplet"
+	region = "SFO2"
+	size   = "1gb"
+	}
+	
+# the code after changing the token part will been
+
+	variable "digitalocean_token" {}
+	provider "digitalocean" {
+	token = "${var.digitalocean_token}"  
+	}
+	
+	resource "digitalocean_droplet" "terraform" {   
+	image  = "ubuntu-18-04-x64"
+	name   = "terraform-droplet"
+	region = "SFO2"
+	size   = "1gb"
+	}
+
+# save the content to createdroplet.tf in ur work directory
+
+# now we need to export the token that we got from API - digitalocean 
+ $ export digitalocean_token=d38f2bad15827c7d777d9dc2e5fa9709fa16ace468c2cc0e2f7ec24623d41d11  --> Linux and Mac
+ $ set digitalocean_token=d38f2bad15827c7d777d9dc2e5fa9709fa16ace468c2cc0e2f7ec24623d41d11  --> windows
+ 
+
+# now let's start working with terraform
+ $ terraform init 
+ $ terraform plan
+	# it will ask u about the token
+ $ terraform apply
+	# enter the token 
+	# enter yes
+
+# now to destroy this droplet just use
+ $ terraform destroy
+ 
+# now if we want to install anything in the new droplet at the provisioning time, we will add some new commands.
+# The author create multiple tf files for a reason
+ 1. provider.tf
+	
+	variable "do_token" {}
+	variable "pub_key" {}
+	variable "pvt_key" {}
+	variable "ssh_fingerprint" {}
+	
+	provider "digitalocean" {
+		token = "${var.do_token}"
+	}
+
+
+ 2. web1.tf
+
+	resource "digitalocean_droplet" "web" {
+		image = "ubuntu-16-04-x64"
+		name = "web1"
+		region = "nyc2"
+		size = "512mb"
+		private_networking = true
+		#user_data = "${file("config/webuserdata.sh")}"
+		ssh_keys = [
+			"${var.ssh_fingerprint}"
+		]
+		connection {
+			user = "root"
+			type = "ssh"
+			private_key = "${file(var.pvt_key)}"
+			timeout = "2m"
+		}
+		provisioner "remote-exec"{      #it will running after provisioning process complet.
+			inline = [ 
+				#install Docker Requirement    
+				"sudo apt-get update",          
+				"sudo apt-get -y install nginx" 
+			]  
+		}
+    }                               
+	
+# now we need to repeat export token process 
+ $ export do_token=d38f2bad15827c7d777d9dc2e5fa9709fa16ace468c2cc0e2f7ec24623d41d11  --> Linux and Mac
+ $ set do_token=d38f2bad15827c7d777d9dc2e5fa9709fa16ace468c2cc0e2f7ec24623d41d11  --> windows
+
+# now we need to generate the SSH for digital ocean:
+ $ ssh-keygen -t ecdsa
+ # password: empty
+ # confirm: empty
+ $ cd /Users/mustafaalogaidi/Desktop/DigitalOcean_Terraform_SSH/.ssh
+ $ cat dokey.pub
+ # copy the public key to --> digital ocean --> account menu --> settings --> security --> add ssh key --> giv it a name
+ # now copy the MD5 that had been calculated after creating the new ssh key in D.O.
+ # now export the ssht as below
+ # export ssh_fingerprint_mac=19:2a:bd:c7:0c:8a:fd:ac:97:42:75:15:cb:56:6f:7e
+
+ # to check our keys:
+  $ echo $digitalocean_token
+  $ echo $ssh_fingerprint_mac
+
+# now we need to export the SSH of digitalocean.
+ $ export ssh_fingerprint=39:85:ea:fa:6c:d2:1f:4b:db:62:45:d2:ab:53:39:25
+ $ set ssh_fingerprint=39:85:ea:fa:6c:d2:1f:4b:db:62:45:d2:ab:53:39:25
+
+# to check the variables above
+ $ echo $do_token
+ $ echo $ssh_fingerprint
+ $ terraform init
+ 
+ $ terraform plan \
+   -var "do_token"=${DO_TOKEN} \
+   -var "pub_key"=$/c/Terraform_DigitalOcean/ssh_fingerprint.pub \
+   -var "pvt_key"=$/c/Terraform_DigitalOcean/ssh_fingerprint \
+   -var "ssh_fingerprint"=$SSH_FINGERPRINT
+ 
+ $ terraform plan -var "do_token"=${DO_TOKEN} -var "pub_key"=$/c/Terraform_DigitalOcean/ssh_fingerprint.pub  -var "pvt_key"=$/c/Terraform_DigitalOcean/ssh_fingerprint -var "ssh_fingerprint"=$SSH_FINGERPRINT
+ 
+ 
+# another way to configer the provider.tf
+
+	variable "do_token" {                                                                 
+			type = "string"                                                               
+			description = "DigitalOcean API Token"                                        
+			default = "d38f2bad15827c7d777d9dc2e5fa9709fa16ace468c2cc0e2f7ec24623d41d11"  
+	}                                                                                     
+	variable "pub_key" {                                                                  
+			type = "string"                                                               
+			description = "The Path to Your Public Key"                                   
+			default = "C:/Terraform_DigitalOcean/ssh_fingerprint_rsa.pub"                 
+	}                                                                                     
+	variable "pvt_key" {                                                                  
+	type = "string"                                                                       
+			description = "The Path to Your PrivateKey"                                   
+			default = "C:/Terraform_DigitalOcean/ssh_fingerprint_rsa"                     
+	}                                                                                     
+	variable "ssh_fingerprint" {                                                          
+			type = "string"                                                               
+			description = "SSH Key fingerprint"                                           
+			default = "39:85:ea:fa:6c:d2:1f:4b:db:62:45:d2:ab:53:39:25"                   
+	}                                                                                     
+	provider "digitalocean" {                                                             
+			token = "${var.do_token}"                                                     
+	}                                                                                     
+
+
+ 
+=============================================================== End of Terraform =================================================
+
+
+================================================================= Terraform ======================================================
+
+------------------------------------------------------ Terraform Introduction --------------------------------------------------
+
+
+# Terraform is a tool for building, changing, and versioning infrastructure safely and efficiently. Terraform can manage
+  existing and popular service providers as well as custom inhouse solutions.
+
+# (Configuration) files and (execution plan) are the Key Components of Terraform to Manage and Execute the Infrastructure.
+
+# Terraform can manage includes low-level components such as compute instances, storage, and networking, as well as highlevel 
+  components such as DNS entries, SaaS features, etc.
+
+# Infrastructure as Code: Infrastructure is described using a highlevel configuration syntax. This allows a blueprint of your datacenter
+  to be versioned and treated as you would any other code. Additionally, infrastructure can be shared and re-used.
+
+# Execution Plans: Terraform has a "planning" step where it generates an execution plan. The execution plan shows what Terraform will do
+  when you call apply. This lets you avoid any surprises when Terraform manipulates infrastructure.
+
+# Resource Graph: Terraform builds a graph of all your resources, and parallelizes the creation and modification of any non-dependent
+  resources. Because of this, Terraform builds infrastructure as efficiently as possible, and operators get insight into dependencies in
+  their infrastructure.
+
+# Change Automation: Complex change sets can be applied to your infrastructure with minimal human interaction. With the
+  previously mentioned execution plan and resource graph, you know exactly what Terraform will change and in what order,
+  avoiding many possible human errors.
+
+
+=========================================================== End Of Terraform =====================================================
