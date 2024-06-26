@@ -645,7 +645,7 @@ ADD hom*/mydir/   --> add all files starting with hom
 
 # we will take the topics below 
  - contanier data management
- - persistent data
+ - persistent data problem
  - data volumes
  - bind mount points in containers.
 
@@ -664,7 +664,7 @@ ADD hom*/mydir/   --> add all files starting with hom
  * let's talk about <volumes>: 
   i. volumes are stored in a part of the host filesystem which is managed by docker.
   ii. volumes are created and managed by containers.
-  iii. volumes can be created by volume command in docker file.
+  iii. volumes can be created by [volume command] in dockerfile.
   iv. when u create a volume it is stored within a directory on the docker host machine.
   v. volumes can not be removed when user destroy the containers.
 
@@ -710,7 +710,7 @@ ADD hom*/mydir/   --> add all files starting with hom
   i. Bind Mounts: means a file or directory on the host machine is mounted into container.
   ii. mapping of host files into a container files.
   iii. bind mounts may be stored anywhere on the host system.
-  iv. non-docker process on the docker host or a docker container can modify them at anytime.
+  iv. non-docker process on the docker host or a docker container can modify them at anytime, this mean it can be modified from host as well from the container.
   v. bind mount can't be use in dockerfile  <-- :(
   vi. it's very useful to share configuration files from the host machine to containers.
   vii. sharing source code or build artifacts between a development environment on the docker host and a container.
