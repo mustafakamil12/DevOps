@@ -991,7 +991,7 @@ ADD hom*/mydir/   --> add all files starting with hom
 
 # another example to create MSSQL Container
 
-    docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=P@ssw0rd" \
+    docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=mypass" \
         -p 1433:1433 --name mssqldb --hostname mssqldb \
         --network mustafa --dns="172.21.0.10" \
         -d mcr.microsoft.com/mssql/server:2019-latest    
@@ -1007,7 +1007,7 @@ ADD hom*/mydir/   --> add all files starting with hom
         hostname: mssqldb # Set the hostname
         environment:
           ACCEPT_EULA: "Y" # Accept the SQL Server EULA
-          MSSQL_SA_PASSWORD: "P@ssw0rd" # Set the SA password
+          MSSQL_SA_PASSWORD: "mypass" # Set the SA password
         ports:
           - "1433:1433" # Bind port 1433 on the host to port 1433 in the container
         networks:
