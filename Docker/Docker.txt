@@ -914,6 +914,22 @@ ADD hom*/mydir/   --> add all files starting with hom
 
 # let's convert some docker command used to start new application to docker compose yaml file format:
 
+    docker run -d \
+      -p 127.0.0.1:3000:3000 \
+      -w /app \
+      -v "$(pwd):/app" \
+      --network todo-app \
+      --network-alias app \
+      -e MYSQL_HOST=mysql \
+      -e MYSQL_USER=root \
+      -e MYSQL_PASSWORD=secret \
+      -e MYSQL_DB=todos \
+      node:18-alpine \
+      sh -c "yarn install && yarn run dev"
+
+
+- the docker compose for the command above will be:
+
     version: '3.8' # Specify the version of Docker Compose file
 
     services:
@@ -936,24 +952,6 @@ ADD hom*/mydir/   --> add all files starting with hom
     networks:
       todo-app: # Define the network
         driver: bridge # Use bridge network driver (default)
-
-
-- the docker compose for the command above will be:
-
-    services:
-      app:
-        image: node:18-alpine
-        command: sh -c "yarn install && yarn run dev"
-        ports:
-          - 127.0.0.1:3000:3000
-        working_dir: /app
-        volumes:
-          - ./:/app
-        environment:
-          MYSQL_HOST: mysql
-          MYSQL_USER: root
-          MYSQL_PASSWORD: secret
-          MYSQL_DB: todos
 
 # another example of docker command to start new application to compose yaml file format:
 
