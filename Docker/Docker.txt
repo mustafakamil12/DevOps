@@ -988,7 +988,41 @@ ADD hom*/mydir/   --> add all files starting with hom
     volumes:
       todo-mysql-data:
     
-    
+
+# another example to create MSSQL Container
+
+    docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=P@ssw0rd" \
+        -p 1433:1433 --name mssqldb --hostname mssqldb \
+        --network mustafa --dns="172.21.0.10" \
+        -d mcr.microsoft.com/mssql/server:2019-latest    
+
+- the docker compose will be 
+
+    version: '3.8' # Specify the version of Docker Compose file
+
+    services:
+      mssqldb:
+        image: mcr.microsoft.com/mssql/server:2019-latest # Use the specified SQL Server image
+        container_name: mssqldb # Set the container name
+        hostname: mssqldb # Set the hostname
+        environment:
+          ACCEPT_EULA: "Y" # Accept the SQL Server EULA
+          MSSQL_SA_PASSWORD: "P@ssw0rd" # Set the SA password
+        ports:
+          - "1433:1433" # Bind port 1433 on the host to port 1433 in the container
+        networks:
+          mustafa: # Specify the network the service should join
+            aliases:
+              - mssqldb # Set the network alias for the container
+        dns:
+          - "172.21.0.10" # Set the DNS server IP
+        restart: always # Always restart the container in case of failure
+
+    networks:
+      mustafa: # Define the network
+        driver: bridge # Use the bridge network driver (default)
+
+
 
 # now we will start building yaml file: 
 
@@ -1092,6 +1126,17 @@ ADD hom*/mydir/   --> add all files starting with hom
     volumes:
       data:
         external: true # Use a pre-existing external volume
+
+# compare links vs depends_on
+    - depends_on
+        . Purpose: Specifies dependencies between services, indicating the order in which services should be started.
+        . Behavior: When a service declares another service in depends_on, Docker Compose will ensure the dependent service starts before the current service. However, it does not wait for the dependent service to be "ready" (i.e., it just ensures the container is up, not that the application inside is fully started).
+
+
+    - links
+        . Purpose: Provides legacy service discovery and a way for services to communicate with each other. Links create environment variables for the linked services and allow services to refer to each other by a hostname.
+        . Behavior: When you use links, Docker Compose creates environment variables for the IP address and port of the linked services. It also allows you to alias the service name.
+        . Deprecation: links is considered a legacy feature and is generally replaced by using custom networks, which provide a better way to handle service discovery.
 
 
 # commands 
