@@ -1216,7 +1216,7 @@ ADD hom*/mydir/   --> add all files starting with hom
  - ports
  - and more :)
 
-# Task: it's a running container which is part of a swarm service and managed by a swarm manager, in another word (Task is a part of service), it's carried docker container and the commands to run inside the container.
+# Task: it's a running container which is part of a <swarm service> and managed by a swarm manager, in another word (Task is a part of service), it's carried docker container and the commands to run inside the container.
  - once task is assigned to a node, it cannot move to another node.
 
 # Nodes: it's an instance of the docker engine participating in the swarm.
@@ -1420,12 +1420,12 @@ $ docker service --help
 
 # docker swarm has new network driver <overlay network>
 # overlay network driver creates a distributed network among multiple docker hosts.
-# overlay network is allow containers to communicate inside the single swarm < it look like vlan>
+# overlay network is allow containers to communicate inside the single swarm <it look like vlan>
 
 # when u init a swarm or join a docker host (physical or virtual) to a swarm, 2 new networks will be created on that host:
  
  1. ingress: it's an overlay network, which handles control and data traffic related to swarm services.
- 	- so all services running a single docker swarm will communicate with the help of ingress
+ 	- so all services running in a single docker swarm will communicate with the help of ingress
  	- ingress overlay network will only work if u not attaching the (swarm service) with a user defiend overlay netwok.
 
  2. bridge network: it's called <docker_gwbridge> which connect the individual docker node to the other node participating in the swarm
