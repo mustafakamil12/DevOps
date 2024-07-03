@@ -1518,6 +1518,8 @@ $ docker service --help
 		    |     .NET   |
 		    '------------'
 
+^               ^      ^              ^  
+| front_end_ntw |      | back_end_ntw | 
 
  3. Service Parts:
 	i. This is 5 Service combination App.
@@ -1551,7 +1553,7 @@ $ docker service --help
 	  	- Publish 1+ replicas
 	  
 	  > Result Service:
-	    - Image : dockersamples/examplevotingapp_result:bfore Will display the Voting result
+	    - Image : dockersamples/examplevotingapp_result:before Will display the Voting result
 	    - Publish on back_end_ntw network
 	    - Publish on port 5001, Container port 80
 	    - Publish 1+ replicas
@@ -1736,7 +1738,7 @@ version: "3"
 # u'll see this sentence <Updating service nginx_start_web> that's mean it's scale up the service nginx_start_web
  $ docker service ps nginx_start_web
 
-# what happen actually is the swarm start stopping containers one by one so the service will not get any downtime and spin up the containers with new configuration one by one also
+# what happen actually is the swarm stopping containers one by one so the service will not get any downtime and spin up the containers with new configuration one by one also
 # all the node should be able to serve the traffic and load balancer will manage the request as per on algorthim
 
 # now we will test how we can add new service to the stack, but first need to add visualizer, this is a new application which will dispaly you containers running in the docker swarm, manager and the worker node, it's already in the docker hub
@@ -1841,7 +1843,7 @@ version: "3"
   > https://github.com/dockersamples/example-voting-app
 
  # to Get List of Stack running in Swarm 
-  $ docker swarm ls
+  $ docker stack ls
  # to Get List of Task Running in Stack 
   > docker stack ps <Stack_Name>
  # to Get List of Replicas Running in Service 
@@ -1849,98 +1851,101 @@ version: "3"
 
  # now we will get a copy of the stack yaml file from the link above:
 
-  version: "3"
-  services:
-  
-    redis:
-      image: redis:alpine
-      networks:
-        - frontend
-      deploy:
-        replicas: 1
-        update_config:
-          parallelism: 2
-          delay: 10s
-        restart_policy:
-          condition: on-failure
-  
-    db:
-      image: postgres:9.4
-      volumes:
-        - db-data:/var/lib/postgresql/data
-      networks:
-        - backend
-      deploy:
-        placement:
-          constraints: [node.role == manager]
-  
-    vote:
-      image: dockersamples/examplevotingapp_vote:before
-      ports:
-        - 5000:80
-      networks:
-        - frontend
-      depends_on:
-        - redis
-      deploy:
-        replicas: 2
-        update_config:
-          parallelism: 2
-        restart_policy:
-          condition: on-failure
-  
-    result:
-      image: dockersamples/examplevotingapp_result:before
-      ports:
-        - 5001:80
-      networks:
-        - backend
-      depends_on:
-        - db
-      deploy:
-        replicas: 1
-        update_config:
-          parallelism: 2
-          delay: 10s
-        restart_policy:
-          condition: on-failure
-  
-    worker:
-      image: dockersamples/examplevotingapp_worker
-      networks:
-        - frontend
-        - backend
-      depends_on:
-        - db
-      deploy:
-        mode: replicated
-        replicas: 1
-        labels: [APP=VOTING]
-        restart_policy:
-          condition: on-failure
-          delay: 10s
-          max_attempts: 3
-          window: 120s
-        placement:
-          constraints: [node.role == manager]
-  
-    visualizer:
-      image: dockersamples/visualizer:stable
-      ports:
-        - "8080:8080"
-      stop_grace_period: 1m30s
-      volumes:
-        - "/var/run/docker.sock:/var/run/docker.sock"
-      deploy:
-        placement:
-          constraints: [node.role == manager]
-  
-  networks:
-    frontend:
-    backend:
-  
-  volumes:
-    db-data:
+    version: "3"
+    services:
+
+      redis:
+        image: redis:alpine
+        networks:
+          - frontend
+        deploy:
+          replicas: 1
+          update_config:
+            parallelism: 2
+            delay: 10s
+          restart_policy:
+            condition: on-failure
+
+      db:
+        image: postgres:latest
+        volumes:
+          - db-data:/var/lib/postgresql/data
+        networks:
+          - backend
+        environment:
+          - POSTGRES_PASSWORD=mypassword
+        deploy:
+          placement:
+            constraints: [node.role == manager]
+
+      vote:
+        image: dockersamples/examplevotingapp_vote:before
+        ports:
+          - 5000:80
+        networks:
+          - frontend
+        depends_on:
+          - redis
+        deploy:
+          replicas: 2
+          update_config:
+            parallelism: 2
+          restart_policy:
+            condition: on-failure
+
+      result:
+        image: dockersamples/examplevotingapp_result:before
+        ports:
+          - 5001:80
+        networks:
+          - backend
+        depends_on:
+          - db
+        deploy:
+          replicas: 1
+          update_config:
+            parallelism: 2
+            delay: 10s
+          restart_policy:
+            condition: on-failure
+
+      worker:
+        image: dockersamples/examplevotingapp_worker
+        networks:
+          - frontend
+          - backend
+        depends_on:
+          - db
+        deploy:
+          mode: replicated
+          replicas: 1
+          labels: [APP=VOTING]
+          restart_policy:
+            condition: on-failure
+            delay: 10s
+            max_attempts: 3
+            window: 120s
+          placement:
+            constraints: [node.role == manager]
+
+      visualizer:
+        image: dockersamples/visualizer:stable
+        ports:
+          - "8080:8080"
+        stop_grace_period: 1m30s
+        volumes:
+          - "/var/run/docker.sock:/var/run/docker.sock"
+        deploy:
+          placement:
+            constraints: [node.role == manager]
+           
+
+    networks:
+      frontend:
+      backend:
+
+    volumes:
+      db-data:
   
 # let's create file in the node, am using manager, and name it <docker-stack.yml>
 # paste the code above in it
