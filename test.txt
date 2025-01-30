@@ -96,8 +96,10 @@ class NeuralNetworkSimulator:
         self.draw_hidden_layer(layer_id, num_neurons)
 
     def draw_hidden_layer(self, layer_id, num_neurons):
-        x = 200
+        # Calculate x position for the new hidden layer
+        x = 200 + len(self.hidden_layers) * 150  # 150 pixels spacing between layers
         y_start = 50
+
         for i in range(num_neurons):
             neuron_id = f"{layer_id}_Neuron_{i+1}"
             self.draw_neuron(neuron_id, x, y_start + i * 50)
@@ -105,7 +107,7 @@ class NeuralNetworkSimulator:
     def add_output_neuron(self):
         neuron_id = f"Output_{len(self.output_neurons) + 1}"
         self.output_neurons.append(neuron_id)
-        self.draw_neuron(neuron_id, 350, len(self.output_neurons) * 50)
+        self.draw_neuron(neuron_id, 350 + len(self.hidden_layers) * 150, len(self.output_neurons) * 50)
 
     def draw_neuron(self, neuron_id, x, y):
         self.network_panel.create_oval(x, y, x + 50, y + 50, fill="lightblue", tags=neuron_id)
