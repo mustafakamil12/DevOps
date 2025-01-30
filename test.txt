@@ -24,42 +24,49 @@ class NeuralNetworkSimulator:
         self.create_gui()
 
     def create_gui(self):
-        # Panels
-        self.network_panel = tk.Canvas(self.root, bg="white", width=400, height=600)
-        self.network_panel.grid(row=0, column=0, padx=10, pady=10)
+        # PanedWindow for resizable panels
+        self.main_paned = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=5)
+        self.main_paned.pack(fill=tk.BOTH, expand=True)
 
-        self.graph_panel = tk.Canvas(self.root, bg="lightgray", width=400, height=600)
-        self.graph_panel.grid(row=0, column=1, padx=10, pady=10)
+        # Network Panel
+        self.network_frame = tk.Frame(self.main_paned, bg="white")
+        self.main_paned.add(self.network_frame, minsize=400)
 
-        self.control_panel = tk.Frame(self.root, bg="lightgray", width=200, height=600)
-        self.control_panel.grid(row=0, column=2, padx=10, pady=10)
+        self.network_panel = tk.Canvas(self.network_frame, bg="white")
+        self.network_panel.pack(fill=tk.BOTH, expand=True)
 
-        # Scrollbars
-        self.network_scroll = ttk.Scrollbar(self.root, orient="vertical", command=self.network_panel.yview)
-        self.network_scroll.grid(row=0, column=0, sticky="nse")
+        self.network_scroll = ttk.Scrollbar(self.network_frame, orient="vertical", command=self.network_panel.yview)
+        self.network_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.network_panel.configure(yscrollcommand=self.network_scroll.set)
 
-        self.graph_scroll = ttk.Scrollbar(self.root, orient="vertical", command=self.graph_panel.yview)
-        self.graph_scroll.grid(row=0, column=1, sticky="nse")
-        self.graph_panel.configure(yscrollcommand=self.graph_scroll.set)
+        # Graph Panel
+        self.graph_frame = tk.Frame(self.main_paned, bg="lightgray")
+        self.main_paned.add(self.graph_frame, minsize=400)
+
+        self.figure, self.ax = plt.subplots()
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.graph_frame)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        self.graph_scroll = ttk.Scrollbar(self.graph_frame, orient="vertical", command=self.canvas.get_tk_widget().yview)
+        self.graph_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas.get_tk_widget().configure(yscrollcommand=self.graph_scroll.set)
+
+        # Control Panel
+        self.control_frame = tk.Frame(self.main_paned, bg="lightgray", width=200)
+        self.main_paned.add(self.control_frame, minsize=200)
 
         # Buttons
-        self.add_input_button = tk.Button(self.control_panel, text="Add Input Neuron", command=self.add_input_neuron)
+        self.add_input_button = tk.Button(self.control_frame, text="Add Input Neuron", command=self.add_input_neuron)
         self.add_input_button.pack(pady=5)
 
-        self.add_hidden_button = tk.Button(self.control_panel, text="Add Hidden Layer", command=self.prompt_hidden_layer)
+        self.add_hidden_button = tk.Button(self.control_frame, text="Add Hidden Layer", command=self.prompt_hidden_layer)
         self.add_hidden_button.pack(pady=5)
 
-        self.add_output_button = tk.Button(self.control_panel, text="Add Output Neuron", command=self.add_output_neuron)
+        self.add_output_button = tk.Button(self.control_frame, text="Add Output Neuron", command=self.add_output_neuron)
         self.add_output_button.pack(pady=5)
 
-        self.run_button = tk.Button(self.control_panel, text="Run Network", command=self.run_network)
+        self.run_button = tk.Button(self.control_frame, text="Run Network", command=self.run_network)
         self.run_button.pack(pady=5)
-
-        # Graph
-        self.figure, self.ax = plt.subplots()
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.graph_panel)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def add_input_neuron(self):
         neuron_id = f"Input_{len(self.input_neurons) + 1}"
