@@ -1,173 +1,84 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, simpledialog, messagebox
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
 
-# Neural Network Simulator
 class NeuralNetworkSimulator:
     def __init__(self, root):
         self.root = root
         self.root.title("Neural Network Simulator")
-        self.root.geometry("1200x800")
-
-        # Neural Network Data
-        self.input_neurons = []
-        self.hidden_layers = []
-        self.output_neurons = []
-        self.connections = []
-        self.weights = {}
-        self.biases = {}
-        self.activation_functions = {}
-
-        # Dragging State
-        self.dragging = False
-        self.selected_neuron = None
-        self.start_x = 0
-        self.start_y = 0
-
-        # GUI Components
-        self.create_gui()
-
-    def create_gui(self):
-        # PanedWindow for resizable panels
-        self.main_paned = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=5)
-        self.main_paned.pack(fill=tk.BOTH, expand=True)
-
-        # Network Panel
-        self.network_frame = tk.Frame(self.main_paned, bg="white")
-        self.main_paned.add(self.network_frame, minsize=400)
-
-        self.network_panel = tk.Canvas(self.network_frame, bg="white")
-        self.network_panel.pack(fill=tk.BOTH, expand=True)
-
-        self.network_scroll = ttk.Scrollbar(self.network_frame, orient="vertical", command=self.network_panel.yview)
-        self.network_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.network_panel.configure(yscrollcommand=self.network_scroll.set)
-
-        # Graph Panel
-        self.graph_frame = tk.Frame(self.main_paned, bg="lightgray")
-        self.main_paned.add(self.graph_frame, minsize=400)
-
-        self.figure, self.ax = plt.subplots()
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.graph_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        self.graph_scroll = ttk.Scrollbar(self.graph_frame, orient="vertical", command=self.canvas.get_tk_widget().yview)
-        self.graph_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.canvas.get_tk_widget().configure(yscrollcommand=self.graph_scroll.set)
-
-        # Control Panel
-        self.control_frame = tk.Frame(self.main_paned, bg="lightgray", width=200)
-        self.main_paned.add(self.control_frame, minsize=200)
-
-        # Buttons
-        self.add_input_button = tk.Button(self.control_frame, text="Add Input Neuron", command=self.add_input_neuron)
-        self.add_input_button.pack(pady=5)
-
-        self.add_hidden_button = tk.Button(self.control_frame, text="Add Hidden Layer", command=self.prompt_hidden_layer)
-        self.add_hidden_button.pack(pady=5)
-
-        self.add_output_button = tk.Button(self.control_frame, text="Add Output Neuron", command=self.add_output_neuron)
-        self.add_output_button.pack(pady=5)
-
-        self.run_button = tk.Button(self.control_frame, text="Run Network", command=self.run_network)
-        self.run_button.pack(pady=5)
-
-        # Bind mouse events for dragging
-        self.network_panel.bind("<Button-1>", self.on_neuron_click)
-        self.network_panel.bind("<B1-Motion>", self.on_neuron_drag)
-        self.network_panel.bind("<ButtonRelease-1>", self.on_neuron_release)
-
-    def add_input_neuron(self):
-        neuron_id = f"Input_{len(self.input_neurons) + 1}"
-        self.input_neurons.append(neuron_id)
-        self.draw_neuron(neuron_id, 50, len(self.input_neurons) * 50)
-
-    def prompt_hidden_layer(self):
-        # Create a popup window to enter the number of neurons
-        self.hidden_layer_window = tk.Toplevel(self.root)
-        self.hidden_layer_window.title("Add Hidden Layer")
-        self.hidden_layer_window.geometry("300x100")
-
-        tk.Label(self.hidden_layer_window, text="Number of Neurons:").pack(pady=5)
-        self.neuron_count_entry = tk.Entry(self.hidden_layer_window)
-        self.neuron_count_entry.pack(pady=5)
-
-        tk.Button(self.hidden_layer_window, text="Add", command=self.add_hidden_layer).pack(pady=5)
-
-    def add_hidden_layer(self):
-        try:
-            num_neurons = int(self.neuron_count_entry.get())
-            if num_neurons <= 0:
-                raise ValueError("Number of neurons must be positive.")
-        except ValueError as e:
-            messagebox.showerror("Invalid Input", str(e))
-            return
-
-        # Close the popup window
-        self.hidden_layer_window.destroy()
-
-        # Add the hidden layer
-        layer_id = f"Hidden_{len(self.hidden_layers) + 1}"
-        self.hidden_layers.append([f"{layer_id}_Neuron_{i+1}" for i in range(num_neurons)])
-        self.draw_hidden_layer(layer_id, num_neurons)
-
-    def draw_hidden_layer(self, layer_id, num_neurons):
-        # Calculate x position for the new hidden layer
-        x = 200 + len(self.hidden_layers) * 150  # 150 pixels spacing between layers
-        y_start = 50
-
-        for i in range(num_neurons):
-            neuron_id = f"{layer_id}_Neuron_{i+1}"
-            self.draw_neuron(neuron_id, x, y_start + i * 50)
-
-    def add_output_neuron(self):
-        neuron_id = f"Output_{len(self.output_neurons) + 1}"
-        self.output_neurons.append(neuron_id)
-        self.draw_neuron(neuron_id, 350 + len(self.hidden_layers) * 150, len(self.output_neurons) * 50)
-
-    def draw_neuron(self, neuron_id, x, y):
-        self.network_panel.create_oval(x, y, x + 50, y + 50, fill="lightblue", tags=neuron_id)
-        self.network_panel.create_text(x + 25, y + 25, text=neuron_id, tags=neuron_id)
-
-    def on_neuron_click(self, event):
-        # Find the clicked neuron
-        neuron_id = self.network_panel.find_withtag(tk.CURRENT)
-        if neuron_id:
-            self.selected_neuron = neuron_id[0]
-            self.start_x = event.x
-            self.start_y = event.y
-            self.dragging = True
-
-    def on_neuron_drag(self, event):
-        if self.dragging and self.selected_neuron:
-            # Calculate the movement
-            dx = event.x - self.start_x
-            dy = event.y - self.start_y
-
-            # Move the neuron
-            self.network_panel.move(self.selected_neuron, dx, dy)
-            self.network_panel.move(self.selected_neuron + 1, dx, dy)  # Move the text as well
-
-            # Update the start position
-            self.start_x = event.x
-            self.start_y = event.y
-
-    def on_neuron_release(self, event):
-        self.dragging = False
-        self.selected_neuron = None
-
-    def run_network(self):
-        # Simulate network output
-        self.ax.clear()
-        x = np.linspace(-10, 10, 100)
-        y = np.sin(x)  # Example output
-        self.ax.plot(x, y)
-        self.canvas.draw()
-
-# Main Application
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = NeuralNetworkSimulator(root)
-    root.mainloop()
+        
+        # Panels
+        self.setup_panels()
+        self.setup_controls()
+        self.setup_graph()
+        
+        # Neural network elements
+        self.neurons = []  # List of neuron widgets
+        self.connections = []  # List of connections
+        self.weights = {}  # Weights storage
+        self.biases = {}  # Bias storage
+        
+        self.draw_initial_network()
+        
+    def setup_panels(self):
+        self.main_frame = ttk.Frame(self.root)
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        self.canvas = tk.Canvas(self.main_frame, bg="white")
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.scrollbar_x = ttk.Scrollbar(self.main_frame, orient=tk.HORIZONTAL, command=self.canvas.xview)
+        self.scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.scrollbar_y = ttk.Scrollbar(self.main_frame, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.canvas.configure(xscrollcommand=self.scrollbar_x.set, yscrollcommand=self.scrollbar_y.set)
+        self.canvas.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        
+        self.network_frame = ttk.Frame(self.canvas)
+        self.canvas.create_window((0, 0), window=self.network_frame, anchor="nw")
+        
+    def setup_controls(self):
+        control_frame = ttk.Frame(self.root)
+        control_frame.pack(fill=tk.X)
+        
+        ttk.Button(control_frame, text="Add Neuron", command=self.add_neuron).pack(side=tk.LEFT)
+        ttk.Button(control_frame, text="Clear Network", command=self.clear_network).pack(side=tk.LEFT)
+    
+    def setup_graph(self):
+        self.fig, self.ax = plt.subplots()
+        self.ax.set_title("Neural Network Output")
+        self.graph_canvas = FigureCanvasTkAgg(self.fig, master=self.root)
+        self.graph_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+    def draw_initial_network(self):
+        # Example neurons
+        self.add_neuron(50, 100)
+        self.add_neuron(200, 100)
+        self.add_neuron(350, 100)
+        
+        self.connect_neurons(self.neurons[0], self.neurons[1])
+        self.connect_neurons(self.neurons[1], self.neurons[2])
+        
+    def add_neuron(self, x=100, y=100):
+        neuron = self.canvas.create_oval(x-20, y-20, x+20, y+20, fill="skyblue", tags="neuron")
+        self.neurons.append(neuron)
+    
+    def connect_neurons(self, neuron1, neuron2):
+        x1, y1, x2, y2 = self.canvas.coords(neuron1)[0], self.canvas.coords(neuron1)[1], self.canvas.coords(neuron2)[0], self.canvas.coords(neuron2)[1]
+        connection = self.canvas.create_line(x1+20, y1+20, x2+20, y2+20, width=2, fill="black")
+        self.connections.append(connection)
+    
+    def clear_network(self):
+        self.canvas.delete("all")
+        self.neurons.clear()
+        self.connections.clear()
+        self.weights.clear()
+        self.biases.clear()
+        
+# Run the application
+root = tk.Tk()
+nn_simulator = NeuralNetworkSimulator(root)
+root.mainloop()
