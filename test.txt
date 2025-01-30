@@ -20,6 +20,12 @@ class NeuralNetworkSimulator:
         self.biases = {}
         self.activation_functions = {}
 
+        # Dragging State
+        self.dragging = False
+        self.selected_neuron = None
+        self.start_x = 0
+        self.start_y = 0
+
         # GUI Components
         self.create_gui()
 
@@ -67,6 +73,11 @@ class NeuralNetworkSimulator:
 
         self.run_button = tk.Button(self.control_frame, text="Run Network", command=self.run_network)
         self.run_button.pack(pady=5)
+
+        # Bind mouse events for dragging
+        self.network_panel.bind("<Button-1>", self.on_neuron_click)
+        self.network_panel.bind("<B1-Motion>", self.on_neuron_drag)
+        self.network_panel.bind("<ButtonRelease-1>", self.on_neuron_release)
 
     def add_input_neuron(self):
         neuron_id = f"Input_{len(self.input_neurons) + 1}"
@@ -119,6 +130,33 @@ class NeuralNetworkSimulator:
     def draw_neuron(self, neuron_id, x, y):
         self.network_panel.create_oval(x, y, x + 50, y + 50, fill="lightblue", tags=neuron_id)
         self.network_panel.create_text(x + 25, y + 25, text=neuron_id, tags=neuron_id)
+
+    def on_neuron_click(self, event):
+        # Find the clicked neuron
+        neuron_id = self.network_panel.find_withtag(tk.CURRENT)
+        if neuron_id:
+            self.selected_neuron = neuron_id[0]
+            self.start_x = event.x
+            self.start_y = event.y
+            self.dragging = True
+
+    def on_neuron_drag(self, event):
+        if self.dragging and self.selected_neuron:
+            # Calculate the movement
+            dx = event.x - self.start_x
+            dy = event.y - self.start_y
+
+            # Move the neuron
+            self.network_panel.move(self.selected_neuron, dx, dy)
+            self.network_panel.move(self.selected_neuron + 1, dx, dy)  # Move the text as well
+
+            # Update the start position
+            self.start_x = event.x
+            self.start_y = event.y
+
+    def on_neuron_release(self, event):
+        self.dragging = False
+        self.selected_neuron = None
 
     def run_network(self):
         # Simulate network output
