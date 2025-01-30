@@ -32,21 +32,28 @@ class NeuralNetworkSimulator:
         
         ttk.Label(self.control_panel, text="Input Neurons").pack()
         self.input_neurons_entry = ttk.Entry(self.control_panel)
+        self.input_neurons_entry.insert(0, "2")
         self.input_neurons_entry.pack()
         
         ttk.Label(self.control_panel, text="Hidden Layers").pack()
         self.hidden_layers_entry = ttk.Entry(self.control_panel)
+        self.hidden_layers_entry.insert(0, "1")
         self.hidden_layers_entry.pack()
         
         ttk.Label(self.control_panel, text="Neurons per Layer").pack()
         self.neurons_per_layer_entry = ttk.Entry(self.control_panel)
+        self.neurons_per_layer_entry.insert(0, "3")
         self.neurons_per_layer_entry.pack()
         
         ttk.Label(self.control_panel, text="Output Neurons").pack()
         self.output_neurons_entry = ttk.Entry(self.control_panel)
+        self.output_neurons_entry.insert(0, "1")
         self.output_neurons_entry.pack()
         
-        ttk.Button(self.control_panel, text="Update Network", command=self.update_network).pack()
+        ttk.Button(self.control_panel, text="Update Network", command=self.update_network).pack(pady=5)
+        
+        # Add "Run Network" button
+        ttk.Button(self.control_panel, text="Run Network", command=self.run_network).pack(pady=5)
         
         # Canvas for Neural Network
         self.network_canvas = tk.Canvas(self.main_frame, bg="white", width=600, height=400)
@@ -87,7 +94,23 @@ class NeuralNetworkSimulator:
         # Draw output neurons
         for i in range(self.num_output_neurons):
             self.network_canvas.create_oval(x_offset, y_offset + i * spacing, x_offset + 30, y_offset + 30 + i * spacing, fill="red")
+    
+    def run_network(self):
+        # Simulate network output (example: sine wave)
+        self.ax.clear()  # Clear previous plot
+        x = np.linspace(-10, 10, 100)
+        y = np.sin(x)  # Example output (replace with actual neural network logic)
         
+        # Plot the output
+        self.ax.plot(x, y, label="Output")
+        self.ax.set_title("Neural Network Output")
+        self.ax.set_xlabel("Input")
+        self.ax.set_ylabel("Output")
+        self.ax.legend()
+        
+        # Refresh the graph canvas
+        self.graph_canvas.draw()
+
 # Run application
 root = tk.Tk()
 simulator = NeuralNetworkSimulator(root)
