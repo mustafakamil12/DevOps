@@ -66,8 +66,8 @@ class NeuralNetworkSimulator:
         
         # Output Graph Panel
         self.figure, self.ax = plt.subplots(figsize=(5, 3))
-        self.graph_canvas = FigureCanvasTkAgg(self.figure, master=self.main_frame)
-        self.graph_canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.main_frame)
+        self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
     
     def update_network(self):
         # Update network parameters
@@ -158,8 +158,11 @@ class NeuralNetworkSimulator:
         self.ax.set_ylabel("Output")
         self.ax.legend()
         
+        # Add a light grid to the graph
+        self.ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+        
         # Refresh the graph canvas
-        self.graph_canvas.draw()
+        self.canvas.draw()
 
 # Run application
 root = tk.Tk()
