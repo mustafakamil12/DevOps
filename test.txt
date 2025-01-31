@@ -82,26 +82,44 @@ class NeuralNetworkSimulator:
         
         # Add weight and bias inputs for hidden layers
         for layer in range(self.num_hidden_layers):
-            ttk.Label(self.weights_biases_frame, text=f"Hidden Layer {layer + 1}").pack()
+            ttk.Label(self.weights_biases_frame, text=f"Hidden Layer {layer + 1}").grid(row=layer * (self.num_neurons_per_hidden_layer + 1), column=0, columnspan=2, pady=5)
+            
             for neuron in range(self.num_neurons_per_hidden_layer):
-                ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1}").pack()
-                ttk.Label(self.weights_biases_frame, text="Weights (comma-separated):").pack()
-                weight_entry = ttk.Entry(self.weights_biases_frame)
-                weight_entry.pack()
-                ttk.Label(self.weights_biases_frame, text="Bias:").pack()
-                bias_entry = ttk.Entry(self.weights_biases_frame)
-                bias_entry.pack()
+                row = layer * (self.num_neurons_per_hidden_layer + 1) + neuron + 1
+                
+                # Weights
+                ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1} Weights:").grid(row=row, column=0, sticky=tk.W)
+                weight_entry = ttk.Entry(self.weights_biases_frame, width=20)
+                weight_entry.grid(row=row, column=1, padx=5, pady=2)
+                
+                # Biases
+                ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1} Bias:").grid(row=row, column=2, sticky=tk.W)
+                bias_entry = ttk.Entry(self.weights_biases_frame, width=10)
+                bias_entry.grid(row=row, column=3, padx=5, pady=2)
+            
+            # Add a separator line between hidden layers
+            if layer < self.num_hidden_layers - 1:
+                ttk.Separator(self.weights_biases_frame, orient=tk.HORIZONTAL).grid(
+                    row=(layer + 1) * (self.num_neurons_per_hidden_layer + 1), column=0, columnspan=4, pady=5, sticky="ew"
+                )
         
         # Add weight and bias inputs for output layer
-        ttk.Label(self.weights_biases_frame, text="Output Layer").pack()
+        ttk.Label(self.weights_biases_frame, text="Output Layer").grid(
+            row=self.num_hidden_layers * (self.num_neurons_per_hidden_layer + 1), column=0, columnspan=2, pady=5
+        )
+        
         for neuron in range(self.num_output_neurons):
-            ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1}").pack()
-            ttk.Label(self.weights_biases_frame, text="Weights (comma-separated):").pack()
-            weight_entry = ttk.Entry(self.weights_biases_frame)
-            weight_entry.pack()
-            ttk.Label(self.weights_biases_frame, text="Bias:").pack()
-            bias_entry = ttk.Entry(self.weights_biases_frame)
-            bias_entry.pack()
+            row = self.num_hidden_layers * (self.num_neurons_per_hidden_layer + 1) + neuron + 1
+            
+            # Weights
+            ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1} Weights:").grid(row=row, column=0, sticky=tk.W)
+            weight_entry = ttk.Entry(self.weights_biases_frame, width=20)
+            weight_entry.grid(row=row, column=1, padx=5, pady=2)
+            
+            # Biases
+            ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1} Bias:").grid(row=row, column=2, sticky=tk.W)
+            bias_entry = ttk.Entry(self.weights_biases_frame, width=10)
+            bias_entry.grid(row=row, column=3, padx=5, pady=2)
         
         # Redraw network
         self.draw_network()
