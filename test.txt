@@ -10,16 +10,20 @@ class NeuralNetworkSimulator:
         self.root.title("Neural Network Simulator")
         
         # Define network parameters
-        self.num_input_neurons = 2
+        self.num_input_neurons = 1
         self.num_hidden_layers = 1
-        self.num_neurons_per_hidden_layer = 3
+        self.num_neurons_per_hidden_layer = 1
         self.num_output_neurons = 1
         self.weights = {}
         self.biases = {}
         self.connections = []
+        self.input_functions = []  # Stores input functions for each input neuron
         
         # UI Elements
         self.create_ui()
+        
+        # Initialize network with default values
+        self.update_network()
         
     def create_ui(self):
         # Main frame
@@ -33,7 +37,7 @@ class NeuralNetworkSimulator:
         # Network Configuration
         ttk.Label(self.control_panel, text="Input Neurons").pack()
         self.input_neurons_entry = ttk.Entry(self.control_panel)
-        self.input_neurons_entry.insert(0, "2")
+        self.input_neurons_entry.insert(0, "1")
         self.input_neurons_entry.pack()
         
         ttk.Label(self.control_panel, text="Hidden Layers").pack()
@@ -43,7 +47,7 @@ class NeuralNetworkSimulator:
         
         ttk.Label(self.control_panel, text="Neurons per Layer").pack()
         self.neurons_per_layer_entry = ttk.Entry(self.control_panel)
-        self.neurons_per_layer_entry.insert(0, "3")
+        self.neurons_per_layer_entry.insert(0, "1")
         self.neurons_per_layer_entry.pack()
         
         ttk.Label(self.control_panel, text="Output Neurons").pack()
@@ -59,6 +63,10 @@ class NeuralNetworkSimulator:
         # Frame for weights and biases
         self.weights_biases_frame = ttk.Frame(self.control_panel)
         self.weights_biases_frame.pack(fill=tk.X, pady=10)
+        
+        # Frame for input function dropdowns
+        self.input_functions_frame = ttk.Frame(self.control_panel)
+        self.input_functions_frame.pack(fill=tk.X, pady=10)
         
         # Canvas for Neural Network
         self.network_canvas = tk.Canvas(self.main_frame, bg="white", width=600, height=400)
@@ -80,6 +88,20 @@ class NeuralNetworkSimulator:
         for widget in self.weights_biases_frame.winfo_children():
             widget.destroy()
         
+        # Clear previous input function dropdowns
+        for widget in self.input_functions_frame.winfo_children():
+            widget.destroy()
+        
+        # Add input function dropdowns for each input neuron
+        ttk.Label(self.input_functions_frame, text="Input Functions").pack()
+        self.input_functions = []
+        for i in range(self.num_input_neurons):
+            ttk.Label(self.input_functions_frame, text=f"Input Neuron {i + 1}:").pack()
+            input_function = ttk.Combobox(self.input_functions_frame, values=["sin", "cos", "tan", "linear"])
+            input_function.current(0)  # Default to "sin"
+            input_function.pack()
+            self.input_functions.append(input_function)
+        
         # Add weight and bias inputs for hidden layers
         for layer in range(self.num_hidden_layers):
             ttk.Label(self.weights_biases_frame, text=f"Hidden Layer {layer + 1}").grid(row=layer * (self.num_neurons_per_hidden_layer + 1), column=0, columnspan=2, pady=5)
@@ -89,12 +111,14 @@ class NeuralNetworkSimulator:
                 
                 # Weights
                 ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1} Weights:").grid(row=row, column=0, sticky=tk.W)
-                weight_entry = ttk.Entry(self.weights_biases_frame, width=20)
+                weight_entry = tk.Entry(self.weights_biases_frame, width=10, font=("Arial", 10))
+                weight_entry.insert(0, "0")  # Default weight = 0
                 weight_entry.grid(row=row, column=1, padx=5, pady=2)
                 
                 # Biases
                 ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1} Bias:").grid(row=row, column=2, sticky=tk.W)
-                bias_entry = ttk.Entry(self.weights_biases_frame, width=10)
+                bias_entry = tk.Entry(self.weights_biases_frame, width=10, font=("Arial", 10))
+                bias_entry.insert(0, "0")  # Default bias = 0
                 bias_entry.grid(row=row, column=3, padx=5, pady=2)
             
             # Add a separator line between hidden layers
@@ -113,12 +137,14 @@ class NeuralNetworkSimulator:
             
             # Weights
             ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1} Weights:").grid(row=row, column=0, sticky=tk.W)
-            weight_entry = ttk.Entry(self.weights_biases_frame, width=20)
+            weight_entry = tk.Entry(self.weights_biases_frame, width=10, font=("Arial", 10))
+            weight_entry.insert(0, "0")  # Default weight = 0
             weight_entry.grid(row=row, column=1, padx=5, pady=2)
             
             # Biases
             ttk.Label(self.weights_biases_frame, text=f"Neuron {neuron + 1} Bias:").grid(row=row, column=2, sticky=tk.W)
-            bias_entry = ttk.Entry(self.weights_biases_frame, width=10)
+            bias_entry = tk.Entry(self.weights_biases_frame, width=10, font=("Arial", 10))
+            bias_entry.insert(0, "0")  # Default bias = 0
             bias_entry.grid(row=row, column=3, padx=5, pady=2)
         
         # Redraw network
@@ -131,35 +157,97 @@ class NeuralNetworkSimulator:
         spacing = 50
         
         # Draw input neurons
+        input_neurons = []
         for i in range(self.num_input_neurons):
-            self.network_canvas.create_oval(x_offset, y_offset + i * spacing, x_offset + 30, y_offset + 30 + i * spacing, fill="blue")
+            x1, y1 = x_offset, y_offset + i * spacing
+            x2, y2 = x1 + 30, y1 + 30
+            self.network_canvas.create_oval(x1, y1, x2, y2, fill="blue")
+            input_neurons.append(((x1 + x2) / 2, (y1 + y2) / 2))  # Store center of input neurons
         
         # Draw hidden layers
+        hidden_layers = []
         x_offset += 100
         for layer in range(self.num_hidden_layers):
+            neurons = []
             for neuron in range(self.num_neurons_per_hidden_layer):
-                self.network_canvas.create_oval(x_offset, y_offset + neuron * spacing, x_offset + 30, y_offset + 30 + neuron * spacing, fill="green")
+                x1, y1 = x_offset, y_offset + neuron * spacing
+                x2, y2 = x1 + 30, y1 + 30
+                self.network_canvas.create_oval(x1, y1, x2, y2, fill="green")
+                neurons.append(((x1 + x2) / 2, (y1 + y2) / 2))  # Store center of hidden neurons
+            hidden_layers.append(neurons)
             x_offset += 100
         
         # Draw output neurons
+        output_neurons = []
         for i in range(self.num_output_neurons):
-            self.network_canvas.create_oval(x_offset, y_offset + i * spacing, x_offset + 30, y_offset + 30 + i * spacing, fill="red")
+            x1, y1 = x_offset, y_offset + i * spacing
+            x2, y2 = x1 + 30, y1 + 30
+            self.network_canvas.create_oval(x1, y1, x2, y2, fill="red")
+            output_neurons.append(((x1 + x2) / 2, (y1 + y2) / 2))  # Store center of output neurons
+        
+        # Draw connections between input and first hidden layer
+        for input_neuron in input_neurons:
+            for hidden_neuron in hidden_layers[0]:
+                self.network_canvas.create_line(input_neuron[0], input_neuron[1], hidden_neuron[0], hidden_neuron[1], fill="black")
+        
+        # Draw connections between hidden layers
+        for i in range(len(hidden_layers) - 1):
+            for neuron1 in hidden_layers[i]:
+                for neuron2 in hidden_layers[i + 1]:
+                    self.network_canvas.create_line(neuron1[0], neuron1[1], neuron2[0], neuron2[1], fill="black")
+        
+        # Draw connections between last hidden layer and output neurons
+        if hidden_layers:
+            for hidden_neuron in hidden_layers[-1]:
+                for output_neuron in output_neurons:
+                    self.network_canvas.create_line(hidden_neuron[0], hidden_neuron[1], output_neuron[0], output_neuron[1], fill="black")
     
     def run_network(self):
-        # Simulate network output (example: sine wave)
+        # Simulate network output
         self.ax.clear()  # Clear previous plot
-        x = np.linspace(-10, 10, 100)
-        y = np.sin(x)  # Example output (replace with actual neural network logic)
         
-        # Plot the output
-        self.ax.plot(x, y, label="Output")
-        self.ax.set_title("Neural Network Output")
-        self.ax.set_xlabel("Input")
-        self.ax.set_ylabel("Output")
-        self.ax.legend()
+        # Generate input data based on selected input functions
+        x = np.linspace(-10, 10, 100)
+        input_data = []
+        for i, input_function in enumerate(self.input_functions):
+            func = input_function.get()
+            if func == "sin":
+                input_data.append(np.sin(x))
+            elif func == "cos":
+                input_data.append(np.cos(x))
+            elif func == "tan":
+                input_data.append(np.tan(x))
+            elif func == "linear":
+                input_data.append(x)
+            else:
+                input_data.append(np.zeros_like(x))  # Default to zero
+        
+        # Simulate neural network output (example: sum of inputs)
+        y_output = np.zeros_like(x)
+        for data in input_data:
+            y_output += data  # Example: Sum of all inputs
+        
+        # Plot the red sine wave (unchanged)
+        y_sine = np.sin(x)  # Red sine wave
+        self.ax.plot(x, y_sine, color="red", linestyle="-", linewidth=1, label="Sine Wave")
+        
+        # Plot the neural network output
+        self.ax.plot(x, y_output, color="blue", linestyle="-", linewidth=2, label="Network Output")
         
         # Add a light grid to the graph
         self.ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+        
+        # Add specific grid lines at x = 1, x = -1, y = 1, y = -1
+        self.ax.axhline(1, color="gray", linestyle="--", linewidth=0.5)
+        self.ax.axhline(-1, color="gray", linestyle="--", linewidth=0.5)
+        self.ax.axvline(1, color="gray", linestyle="--", linewidth=0.5)
+        self.ax.axvline(-1, color="gray", linestyle="--", linewidth=0.5)
+        
+        # Add legend and labels
+        self.ax.set_title("Neural Network Output vs Sine Wave")
+        self.ax.set_xlabel("Input")
+        self.ax.set_ylabel("Output")
+        self.ax.legend()
         
         # Refresh the graph canvas
         self.canvas.draw()
