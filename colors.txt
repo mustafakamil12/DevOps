@@ -1,0 +1,33 @@
+from confluent_kafka import Producer
+import json
+
+# Kafka configuration settings
+config = {
+    'bootstrap.servers': 'localhost:9092',  # Replace with your Kafka broker
+    'client.id': 'python-producer'
+}
+
+# Create Kafka producer
+producer = Producer(config)
+
+# Kafka topic name
+topic = "test_topic"
+
+# Callback for message delivery status
+def delivery_report(err, msg):
+    if err is not None:
+        print(f"Message delivery failed: {err}")
+    else:
+        print(f"Message delivered to {msg.topic()} [{msg.partition()}]")
+
+# Function to send a message
+def send_message(key, value):
+    producer.produce(topic, key=key, value=json.dumps(value), callback=delivery_report)
+    producer.flush()  # Ensure all messages are sent
+
+# Example usage
+if __name__ == "__main__":
+    for i in range(10):
+        message_key = f"key-{i}"
+        message_value = {"id": i, "message": f"Hello Kafka {i}"}
+        send_message(message_key, message_value)
