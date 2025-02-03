@@ -1,39 +1,35 @@
 from confluent_kafka import Consumer
 
-# Kafka Configuration
+# Kafka configuration
 config = {
-    'bootstrap.servers': 'your-kafka-broker:9093',  # Replace with your broker address
-    'group.id': 'my_consumer_group',
+    'bootstrap.servers': 'your.kafka.server:9093',  # Replace with your Kafka broker
     'security.protocol': 'SSL',
-    'ssl.key.location': 'client-key.pem',
-    'ssl.certificate.location': 'client-cert.pem',
-    'ssl.ca.location': 'ca-cert.pem',
-    'auto.offset.reset': 'earliest'  # Start from the beginning if no previous offset exists
+    'ssl.certificate.location': 'client.crt',
+    'ssl.key.location': 'client.key',
+    'ssl.ca.location': 'ca.crt',  # If a CA cert is required
+    'group.id': 'python-consumer-group',
+    'auto.offset.reset': 'earliest'  # Read messages from the beginning
 }
 
-# Create Kafka Consumer
+# Create Kafka consumer
 consumer = Consumer(config)
-topic = "your_topic"
+topic = "your_topic_name"
 
 # Subscribe to topic
 consumer.subscribe([topic])
 
-print(f"Listening for messages on topic: {topic}")
-
 # Consume messages
 try:
     while True:
-        msg = consumer.poll(1.0)  # Poll messages with a timeout of 1 second
+        msg = consumer.poll(1.0)  # Wait for a message
         if msg is None:
             continue
         if msg.error():
             print(f"Consumer error: {msg.error()}")
             continue
         
-        print(f"Received message: {msg.value().decode('utf-8')} from {msg.topic()}")
-
+        print(f"Received message: {msg.value().decode('utf-8')}")
 except KeyboardInterrupt:
-    print("Stopping consumer...")
-
+    pass
 finally:
     consumer.close()
