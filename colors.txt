@@ -1,7 +1,6 @@
 keytool -exportcert -alias CARoot -keystore /path/to/broker-truststore.jks -rfc -file ca-certificate.pem -storepass broker_truststore_password
 
-keytool -exportcert -alias CARoot -keystore /path/to/broker-truststore.jks -rfc -file ca-certificate.pem -storepass broker_truststore_password
-
+keytool -exportcert -alias client -keystore /path/to/broker-keystore.jks -rfc -file client-certificate.pem -storepass broker_keystore_password
 
 keytool -importkeystore -srckeystore /path/to/broker-keystore.jks -destkeystore client.p12 -deststoretype PKCS12 -srcalias client -srcstorepass broker_keystore_password -deststorepass my_sec_password
 openssl pkcs12 -in client.p12 -nodes -nocerts -out client-key.pem -password pass:my_sec_password
