@@ -1,6 +1,21 @@
-keytool -exportcert -alias CARoot -keystore /path/to/broker-truststore.jks -rfc -file ca-certificate.pem -storepass broker_truststore_password
+# Convert JKS to PKCS12 format
+keytool -importkeystore -srckeystore my_cert.jks -destkeystore my_cert.p12 -deststoretype PKCS12
 
-keytool -exportcert -alias client -keystore /path/to/broker-keystore.jks -rfc -file client-certificate.pem -storepass broker_keystore_password
+# Extract private key
+openssl pkcs12 -in my_cert.p12 -nocerts -nodes -out client-key.pem
 
-keytool -importkeystore -srckeystore /path/to/broker-keystore.jks -destkeystore client.p12 -deststoretype PKCS12 -srcalias client -srcstorepass broker_keystore_password -deststorepass my_sec_password
-openssl pkcs12 -in client.p12 -nodes -nocerts -out client-key.pem -password pass:my_sec_password
+# Extract certificate
+openssl pkcs12 -in my_cert.p12 -clcerts -nokeys -out client-cert.pem
+
+# Extract CA certificate (if needed)
+openssl pkcs12 -in my_cert.p12 -cacerts -nokeys -out ca-cert.pem
+
+
+
+conf = {
+    "bootstrap.servers": "your_kafka_broker:9093",
+    "security.protocol": "SSL",
+    "ssl.key.location": "client-key.pem",
+    "ssl.certificate.location": "client-cert.pem",
+    "ssl.ca.location": "ca-cert.pem"
+}
