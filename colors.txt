@@ -1,37 +1,7 @@
-from confluent_kafka import Producer
+keytool -exportcert -alias CARoot -keystore /path/to/broker-truststore.jks -rfc -file ca-certificate.pem -storepass broker_truststore_password
 
-# Kafka broker details
-bootstrap_servers = "your_kafka_broker:9093"  # Replace with your broker address
+keytool -exportcert -alias CARoot -keystore /path/to/broker-truststore.jks -rfc -file ca-certificate.pem -storepass broker_truststore_password
 
-# Path to your SSL certificates
-ssl_certificate = "/path/to/certificate.cer"
-ssl_private_key = "/path/to/privatekey.key"
 
-# Kafka configuration
-config = {
-    "bootstrap.servers": bootstrap_servers,
-    "security.protocol": "SSL",
-    "ssl.certificate.location": ssl_certificate,
-    "ssl.key.location": ssl_private_key,
-}
-
-# Create a Kafka producer
-producer = Producer(config)
-
-# Kafka topic
-topic = "your_topic_name"
-
-def delivery_report(err, msg):
-    """Callback for delivery reports."""
-    if err:
-        print(f"Message delivery failed: {err}")
-    else:
-        print(f"Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
-
-# Produce messages
-for i in range(10):
-    message = f"Hello Kafka! Message {i}"
-    producer.produce(topic, key=str(i), value=message, callback=delivery_report)
-
-# Wait for all messages to be delivered
-producer.flush()
+keytool -importkeystore -srckeystore /path/to/broker-keystore.jks -destkeystore client.p12 -deststoretype PKCS12 -srcalias client -srcstorepass broker_keystore_password -deststorepass my_sec_password
+openssl pkcs12 -in client.p12 -nodes -nocerts -out client-key.pem -password pass:my_sec_password
