@@ -1,15 +1,9 @@
-# Convert JKS to PKCS12 format
-keytool -importkeystore -srckeystore my_cert.jks -destkeystore my_cert.p12 -deststoretype PKCS12
+openssl pkcs12 -in my_cert.pfx -nocerts -nodes -out client-key.pem
 
-# Extract private key
-openssl pkcs12 -in my_cert.p12 -nocerts -nodes -out client-key.pem
+openssl pkcs12 -in my_cert.pfx -clcerts -nokeys -out client-cert.pem
 
-# Extract certificate
-openssl pkcs12 -in my_cert.p12 -clcerts -nokeys -out client-cert.pem
 
-# Extract CA certificate (if needed)
-openssl pkcs12 -in my_cert.p12 -cacerts -nokeys -out ca-cert.pem
-
+openssl pkcs12 -in my_cert.pfx -cacerts -nokeys -out ca-cert.pem
 
 
 conf = {
