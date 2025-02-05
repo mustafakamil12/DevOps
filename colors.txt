@@ -1,65 +1,48 @@
 from confluent_kafka import SerializingProducer
-from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry.avro import AvroSerializer
 import json
 
-# Kafka Broker Configuration
+# Kafka & Schema Registry Configuration
 kafka_brokers = 'kafka1.xyz.com:443,kafka2.xyz.com:443,kafka3.xyz.com:443'
-schema_registry_url = 'https://schema-registry-url:443'
+schema_registry_url = 'https://schema-registry.xyz.com'
 
-# SSL Configuration
-ssl_config = {
-    "security.protocol": "SSL",
-    "ssl.ca.location": "CARoot.pem",
-    "ssl.certificate.location": "certificate.pem",
-    "ssl.key.location": "key.pem",
-    "ssl.key.password": "welcome123"
-}
+# Initialize Schema Registry
+schema_registry_conf = {'url': schema_registry_url}
+schema_registry_client = SchemaRegistryClient(schema_registry_conf)
 
-# Define Avro Schema
-avro_schema = """
+# Define Avro Schema (Replace with your actual schema)
+avro_schema_str = """
 {
-    "type": "record",
-    "name": "User",
-    "fields": [
-        {"name": "id", "type": "int"},
-        {"name": "name", "type": "string"},
-        {"name": "email", "type": ["null", "string"], "default": null}
-    ]
+  "type": "record",
+  "name": "TestMessage",
+  "fields": [
+    {"name": "id", "type": "int"},
+    {"name": "message", "type": "string"}
+  ]
 }
 """
 
-# Initialize Schema Registry Client
-schema_registry_client = SchemaRegistryClient({'url': schema_registry_url})
-
 # Create Avro Serializer
-avro_serializer = AvroSerializer(schema_registry_client, avro_schema)
+avro_serializer = AvroSerializer(schema_registry_client, avro_schema_str)
 
-# Kafka Producer Configuration
-producer_config = {
-    "bootstrap.servers": kafka_brokers,
-    "key.serializer": str.encode,
-    "value.serializer": avro_serializer,
-    **ssl_config
+# Kafka Producer Config
+producer_conf = {
+    'bootstrap.servers': kafka_brokers,
+    'security.protocol': 'SSL',
+    'ssl.ca.location': 'CARoot.pem',
+    'ssl.certificate.location': 'certificate.pem',
+    'ssl.key.location': 'key.pem',
+    'ssl.key.password': 'welcome123',
+    'key.serializer': lambda k: str(k).encode('utf-8'),  # Key must be bytes
+    'value.serializer': avro_serializer,  # Value is serialized as Avro
 }
 
-producer = SerializingProducer(producer_config)
+producer = SerializingProducer(producer_conf)
 
-# Kafka Topic
-topic = "avro-test-topic"
+# Avro message
+message = {"id": 1, "message": "Hello Kafka!"}
 
-def delivery_report(err, msg):
-    """ Callback for delivery status """
-    if err is not None:
-        print(f"❌ Message failed: {err}")
-    else:
-        print(f"✅ Message delivered to {msg.topic()} [Partition {msg.partition()}] at offset {msg.offset()}")
-
-# Sample Data
-message = {"id": 1, "name": "Alice", "email": "alice@example.com"}
-
-# Produce Avro Message
-producer.produce(topic=topic, key=str(message["id"]), value=message, on_delivery=delivery_report)
-
-# Flush and Close
+# Send Message
+producer.produce(topic='test-topic', key="key1", value=message)
 producer.flush()
