@@ -1,15 +1,13 @@
-openssl pkcs12 -in my_cert.pfx -nocerts -nodes -out client-key.pem
+# Send Message with Callback
+future = producer.send(topic, b'Hello Kafka!')
+future.add_callback(on_success)
+future.add_errback(on_error)
 
-openssl pkcs12 -in my_cert.pfx -clcerts -nokeys -out client-cert.pem
+# Send to a particular partition
+future_partition = producer.send(topic, b'Hello Kafka!', partition=0)
+future_partition.add_callback(on_success)
+future_partition.add_errback(on_error)
 
-
-openssl pkcs12 -in my_cert.pfx -cacerts -nokeys -out ca-cert.pem
-
-
-conf = {
-    "bootstrap.servers": "your_kafka_broker:9093",
-    "security.protocol": "SSL",
-    "ssl.key.location": "client-key.pem",
-    "ssl.certificate.location": "client-cert.pem",
-    "ssl.ca.location": "ca-cert.pem"
-}
+# Ensure messages are sent before closing
+producer.flush()
+producer.close()
