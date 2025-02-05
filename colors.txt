@@ -1,49 +1,22 @@
-from confluent_kafka import SerializingProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
-from confluent_kafka.schema_registry.avro import AvroSerializer
-from confluent_kafka.serialization import StringSerializer
-import json
 
-# Kafka & Schema Registry Configuration
-kafka_brokers = 'kafka1.xyz.com:443,kafka2.xyz.com:443,kafka3.xyz.com:443'
-schema_registry_url = 'https://schema-registry.xyz.com'
-
-# Initialize Schema Registry
-schema_registry_conf = {'url': schema_registry_url}
-schema_registry_client = SchemaRegistryClient(schema_registry_conf)
-
-# Define Avro Schema (Replace with your actual schema)
-avro_schema_str = """
-{
-  "type": "record",
-  "name": "TestMessage",
-  "fields": [
-    {"name": "id", "type": "int"},
-    {"name": "message", "type": "string"}
-  ]
+# Schema Registry Configuration
+schema_registry_conf = {
+    'url': 'https://schema-registry.xyz.com',
+    'ssl.ca.location': 'CARoot.pem'  # Ensure CA cert is correct
 }
-"""
+client = SchemaRegistryClient(schema_registry_conf)
 
-# Create Avro Serializer
-avro_serializer = AvroSerializer(schema_registry_client, avro_schema_str)
+# Subject Name
+subject = "your-subject-name-value"
 
-# Kafka Producer Config
-producer_conf = {
-    'bootstrap.servers': kafka_brokers,
-    'security.protocol': 'SSL',
-    'ssl.ca.location': 'CARoot.pem',
-    'ssl.certificate.location': 'certificate.pem',
-    'ssl.key.location': 'key.pem',
-    'ssl.key.password': 'welcome123',
-    'key.serializer': StringSerializer('utf_8'),  # Properly handle key serialization
-    'value.serializer': avro_serializer,  # Serialize value as Avro
-}
+# Retrieve All Schema Versions
+versions = client.get_versions(subject)
 
-producer = SerializingProducer(producer_conf)
+# Get Earliest Schema (First Version)
+earliest_version = versions[0]  # First registered version
+earliest_schema = client.get_schema(subject, earliest_version)
 
-# Avro message
-message = {"id": 1, "message": "Hello Kafka!"}
-
-# Send Message
-producer.produce(topic='test-topic', key="key1", value=message)
-producer.flush()
+print(f"Schema Version: {earliest_version}")
+print(f"Schema ID: {earliest_schema.schema_id}")
+print(f"Schema: {earliest_schema.schema_str}")
