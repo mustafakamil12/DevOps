@@ -1,13 +1,65 @@
-# Send Message with Callback
-future = producer.send(topic, b'Hello Kafka!')
-future.add_callback(on_success)
-future.add_errback(on_error)
+from confluent_kafka import SerializingProducer
+from confluent_kafka.schema_registry.avro import AvroSerializer
+from confluent_kafka.schema_registry import SchemaRegistryClient
+import json
 
-# Send to a particular partition
-future_partition = producer.send(topic, b'Hello Kafka!', partition=0)
-future_partition.add_callback(on_success)
-future_partition.add_errback(on_error)
+# Kafka Broker Configuration
+kafka_brokers = 'kafka1.xyz.com:443,kafka2.xyz.com:443,kafka3.xyz.com:443'
+schema_registry_url = 'https://schema-registry-url:443'
 
-# Ensure messages are sent before closing
+# SSL Configuration
+ssl_config = {
+    "security.protocol": "SSL",
+    "ssl.ca.location": "CARoot.pem",
+    "ssl.certificate.location": "certificate.pem",
+    "ssl.key.location": "key.pem",
+    "ssl.key.password": "welcome123"
+}
+
+# Define Avro Schema
+avro_schema = """
+{
+    "type": "record",
+    "name": "User",
+    "fields": [
+        {"name": "id", "type": "int"},
+        {"name": "name", "type": "string"},
+        {"name": "email", "type": ["null", "string"], "default": null}
+    ]
+}
+"""
+
+# Initialize Schema Registry Client
+schema_registry_client = SchemaRegistryClient({'url': schema_registry_url})
+
+# Create Avro Serializer
+avro_serializer = AvroSerializer(schema_registry_client, avro_schema)
+
+# Kafka Producer Configuration
+producer_config = {
+    "bootstrap.servers": kafka_brokers,
+    "key.serializer": str.encode,
+    "value.serializer": avro_serializer,
+    **ssl_config
+}
+
+producer = SerializingProducer(producer_config)
+
+# Kafka Topic
+topic = "avro-test-topic"
+
+def delivery_report(err, msg):
+    """ Callback for delivery status """
+    if err is not None:
+        print(f"❌ Message failed: {err}")
+    else:
+        print(f"✅ Message delivered to {msg.topic()} [Partition {msg.partition()}] at offset {msg.offset()}")
+
+# Sample Data
+message = {"id": 1, "name": "Alice", "email": "alice@example.com"}
+
+# Produce Avro Message
+producer.produce(topic=topic, key=str(message["id"]), value=message, on_delivery=delivery_report)
+
+# Flush and Close
 producer.flush()
-producer.close()
