@@ -1,6 +1,7 @@
 from confluent_kafka import SerializingProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
+from confluent_kafka.serialization import StringSerializer
 import json
 
 # Kafka & Schema Registry Configuration
@@ -34,8 +35,8 @@ producer_conf = {
     'ssl.certificate.location': 'certificate.pem',
     'ssl.key.location': 'key.pem',
     'ssl.key.password': 'welcome123',
-    'key.serializer': lambda k: str(k).encode('utf-8'),  # Key must be bytes
-    'value.serializer': avro_serializer,  # Value is serialized as Avro
+    'key.serializer': StringSerializer('utf_8'),  # Properly handle key serialization
+    'value.serializer': avro_serializer,  # Serialize value as Avro
 }
 
 producer = SerializingProducer(producer_conf)
