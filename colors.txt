@@ -9,36 +9,9 @@ import io
 KAFKA_BROKER = "localhost:9092"
 KAFKA_TOPIC = "your_topic"
 
-# Avro schema definition
-SCHEMA_STR = '''
-{
-  "type": "record",
-  "name": "Message",
-  "fields": [
-    {
-      "name": "Unique_id",
-      "type": "int"
-    },
-    {
-      "name": "name",
-      "type": ["null", "string"],
-      "default": null
-    },
-    {
-      "name": "FullType",
-      "type": ["null", "string"],
-      "default": null
-    },
-    {
-      "name": "Vendor",
-      "type": ["null", "string"],
-      "default": null
-    }
-  ]
-}
-'''
-
-schema = avro.schema.parse(SCHEMA_STR)
+# Load Avro schema from file
+with open("schema.avsc", "r") as schema_file:
+    schema = avro.schema.parse(schema_file.read())
 
 # Kafka producer setup
 producer = Producer({'bootstrap.servers': KAFKA_BROKER})
