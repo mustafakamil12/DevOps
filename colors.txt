@@ -1,22 +1,86 @@
-from confluent_kafka.schema_registry import SchemaRegistryClient
+import pyodbc
+import json
+from confluent_kafka import Producer
+import avro.schema
+import avro.io
+import io
 
-# Schema Registry Configuration
-schema_registry_conf = {
-    'url': 'https://schema-registry.xyz.com',
-    'ssl.ca.location': 'CARoot.pem'  # Ensure CA cert is correct
+# Kafka configuration
+KAFKA_BROKER = "localhost:9092"
+KAFKA_TOPIC = "your_topic"
+
+# Avro schema definition
+SCHEMA_STR = '''
+{
+  "type": "record",
+  "name": "Message",
+  "fields": [
+    {
+      "name": "Unique_id",
+      "type": "int"
+    },
+    {
+      "name": "name",
+      "type": ["null", "string"],
+      "default": null
+    },
+    {
+      "name": "FullType",
+      "type": ["null", "string"],
+      "default": null
+    },
+    {
+      "name": "Vendor",
+      "type": ["null", "string"],
+      "default": null
+    }
+  ]
 }
-client = SchemaRegistryClient(schema_registry_conf)
+'''
 
-# Subject Name
-subject = "your-subject-name-value"
+schema = avro.schema.parse(SCHEMA_STR)
 
-# Retrieve All Schema Versions
-versions = client.get_versions(subject)
+# Kafka producer setup
+producer = Producer({'bootstrap.servers': KAFKA_BROKER})
 
-# Get Earliest Schema (First Version)
-earliest_version = versions[0]  # First registered version
-earliest_schema = client.get_schema(subject, earliest_version)
+def fetch_data():
+    """Retrieve data from MSSQL database."""
+    conn = pyodbc.connect(
+        "DRIVER={SQL Server};"
+        "SERVER=your_server;"
+        "DATABASE=your_database;"
+        "UID=your_user;"
+        "PWD=your_password;"
+    )
+    cursor = conn.cursor()
+    cursor.execute("SELECT Unique_id, name, FullType, Vendor FROM your_table")
 
-print(f"Schema Version: {earliest_version}")
-print(f"Schema ID: {earliest_schema.schema_id}")
-print(f"Schema: {earliest_schema.schema_str}")
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return rows
+
+def send_to_kafka(data):
+    """Serialize data using Avro and send to Kafka."""
+    for row in data:
+        record = {
+            "Unique_id": row[0],
+            "name": row[1] if row[1] is not None else None,
+            "FullType": row[2] if row[2] is not None else None,
+            "Vendor": row[3] if row[3] is not None else None
+        }
+        
+        # Serialize data using Avro
+        bytes_writer = io.BytesIO()
+        encoder = avro.io.BinaryEncoder(bytes_writer)
+        writer = avro.io.DatumWriter(schema)
+        writer.write(record, encoder)
+        
+        producer.produce(KAFKA_TOPIC, bytes_writer.getvalue())
+    
+    producer.flush()
+
+if __name__ == "__main__":
+    data = fetch_data()
+    send_to_kafka(data)
+    print("Messages sent successfully!")
