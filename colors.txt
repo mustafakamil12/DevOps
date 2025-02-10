@@ -1,59 +1,562 @@
-import pyodbc
-import json
-from confluent_kafka import Producer
-import avro.schema
-import avro.io
-import io
+import tkinter as tk
+from tkinter import ttk, messagebox
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# Kafka configuration
-KAFKA_BROKER = "localhost:9092"
-KAFKA_TOPIC = "your_topic"
-
-# Load Avro schema from file
-with open("schema.avsc", "r") as schema_file:
-    schema = avro.schema.parse(schema_file.read())
-
-# Kafka producer setup
-producer = Producer({'bootstrap.servers': KAFKA_BROKER})
-
-def fetch_data():
-    """Retrieve data from MSSQL database."""
-    conn = pyodbc.connect(
-        "DRIVER={SQL Server};"
-        "SERVER=your_server;"
-        "DATABASE=your_database;"
-        "UID=your_user;"
-        "PWD=your_password;"
-    )
-    cursor = conn.cursor()
-    cursor.execute("SELECT Unique_id, name, FullType, Vendor FROM your_table")
-
-    rows = cursor.fetchall()
-    conn.close()
-    
-    return rows
-
-def send_to_kafka(data):
-    """Serialize data using Avro and send to Kafka."""
-    for row in data:
-        record = {
-            "Unique_id": row[0],
-            "name": row[1] if row[1] is not None else None,
-            "FullType": row[2] if row[2] is not None else None,
-            "Vendor": row[3] if row[3] is not None else None
-        }
+class NeuralNetworkSimulator:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Neural Network Simulator")
         
-        # Serialize data using Avro
-        bytes_writer = io.BytesIO()
-        encoder = avro.io.BinaryEncoder(bytes_writer)
-        writer = avro.io.DatumWriter(schema)
-        writer.write(record, encoder)
+        # Define network parameters
+        self.num_input_neurons = 1
+        self.num_hidden_layers = 1
+        self.num_neurons_per_hidden_layer = 1
+        self.num_output_neurons = 1
+        self.weights = {}  # Stores weights for connections
+        self.biases = {}  # Stores biases for neurons
+        self.connections = []  # Stores connections between neurons
+        self.input_functions = []  # Stores input functions for each input neuron
+        self.weight_entries = {}  # Stores weight input fields for each neuron
+        self.bias_entries = {}  # Stores bias input fields for each neuron
+        self.activation_function = "ReLU"  # Default activation function
+        self.neuron_positions = {}  # Stores positions of neurons for drawing connections
         
-        producer.produce(KAFKA_TOPIC, bytes_writer.getvalue())
+        # UI Elements
+        self.create_ui()
+        
+        # Initialize network with default values
+        self.update_network()
+        
+    def create_ui(self):
+        # Main frame
+        self.main_frame = ttk.Frame(self.root)
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create a PanedWindow for resizable panes
+        self.pane = ttk.PanedWindow(self.main_frame, orient=tk.HORIZONTAL)
+        self.pane.pack(fill=tk.BOTH, expand=True)
+        
+        # Control Panel
+        self.control_panel = ttk.Frame(self.pane, padding=10)
+        self.pane.add(self.control_panel, weight=1)
+        
+        # Network Configuration
+        ttk.Label(self.control_panel, text="Input Neurons").pack()
+        self.input_neurons_entry = ttk.Entry(self.control_panel)
+        self.input_neurons_entry.insert(0, "1")
+        self.input_neurons_entry.pack()
+        
+        ttk.Label(self.control_panel, text="Hidden Layers").pack()
+        self.hidden_layers_entry = ttk.Entry(self.control_panel)
+        self.hidden_layers_entry.insert(0, "1")
+        self.hidden_layers_entry.pack()
+        
+        ttk.Label(self.control_panel, text="Neurons per Layer").pack()
+        self.neurons_per_layer_entry = ttk.Entry(self.control_panel)
+        self.neurons_per_layer_entry.insert(0, "1")
+        self.neurons_per_layer_entry.pack()
+        
+        ttk.Label(self.control_panel, text="Output Neurons").pack()
+        self.output_neurons_entry = ttk.Entry(self.control_panel)
+        self.output_neurons_entry.insert(0, "1")
+        self.output_neurons_entry.pack()
+        
+        # Activation function dropdown
+        ttk.Label(self.control_panel, text="Activation Function").pack()
+        self.activation_function_combobox = ttk.Combobox(self.control_panel, values=["ReLU", "Step", "Sigmoid"])
+        self.activation_function_combobox.current(0)  # Default to ReLU
+        self.activation_function_combobox.pack()
+        
+        ttk.Button(self.control_panel, text="Update Network", command=self.update_network).pack(pady=5)
+        
+        # Add "Run Network" button
+        ttk.Button(self.control_panel, text="Run Network", command=self.run_network).pack(pady=5)
+        
+        # Add "Update Output" button
+        ttk.Button(self.control_panel, text="Update Output", command=self.update_output).pack(pady=5)
+        
+        # Frame for weights and biases with scrollbars
+        self.weights_biases_frame = ttk.Frame(self.control_panel)
+        self.weights_biases_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Add a canvas and scrollbars for weights and biases
+        self.weights_biases_canvas = tk.Canvas(self.weights_biases_frame, borderwidth=0)
+        self.weights_biases_scrollbar_y = ttk.Scrollbar(self.weights_biases_frame, orient="vertical", command=self.weights_biases_canvas.yview)
+        self.weights_biases_scrollbar_x = ttk.Scrollbar(self.weights_biases_frame, orient="horizontal", command=self.weights_biases_canvas.xview)
+        self.weights_biases_scrollable_frame = ttk.Frame(self.weights_biases_canvas)
+        
+        self.weights_biases_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.weights_biases_canvas.configure(
+                scrollregion=self.weights_biases_canvas.bbox("all")
+            )
+        )
+        
+        self.weights_biases_canvas.create_window((0, 0), window=self.weights_biases_scrollable_frame, anchor="nw")
+        self.weights_biases_canvas.configure(yscrollcommand=self.weights_biases_scrollbar_y.set, xscrollcommand=self.weights_biases_scrollbar_x.set)
+        
+        self.weights_biases_canvas.pack(side="left", fill="both", expand=True)
+        self.weights_biases_scrollbar_y.pack(side="right", fill="y")
+        self.weights_biases_scrollbar_x.pack(side="bottom", fill="x")
+        
+        # Frame for input function dropdowns with scrollbar
+        self.input_functions_frame = ttk.Frame(self.control_panel)
+        self.input_functions_frame.pack(fill=tk.X, pady=10)
+        
+        # Add a canvas and scrollbar for input functions
+        self.input_functions_canvas = tk.Canvas(self.input_functions_frame, borderwidth=0)
+        self.input_functions_scrollbar = ttk.Scrollbar(self.input_functions_frame, orient="vertical", command=self.input_functions_canvas.yview)
+        self.input_functions_scrollable_frame = ttk.Frame(self.input_functions_canvas)
+        
+        self.input_functions_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.input_functions_canvas.configure(
+                scrollregion=self.input_functions_canvas.bbox("all")
+            )
+        )
+        
+        self.input_functions_canvas.create_window((0, 0), window=self.input_functions_scrollable_frame, anchor="nw")
+        self.input_functions_canvas.configure(yscrollcommand=self.input_functions_scrollbar.set)
+        
+        self.input_functions_canvas.pack(side="left", fill="both", expand=True)
+        self.input_functions_scrollbar.pack(side="right", fill="y")
+        
+        # Canvas for Neural Network
+        self.network_canvas = tk.Canvas(self.pane, bg="white", width=600, height=400)
+        self.pane.add(self.network_canvas, weight=2)
+        
+        # Output Graph Panel
+        self.figure, self.ax = plt.subplots(figsize=(5, 3))
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.pane)
+        self.pane.add(self.canvas.get_tk_widget(), weight=2)
     
-    producer.flush()
+    def update_network(self):
+        # Update network parameters
+        self.num_input_neurons = int(self.input_neurons_entry.get())
+        self.num_hidden_layers = int(self.hidden_layers_entry.get())
+        self.num_neurons_per_hidden_layer = int(self.neurons_per_layer_entry.get())
+        self.num_output_neurons = int(self.output_neurons_entry.get())
+        
+        # Update activation function
+        self.activation_function = self.activation_function_combobox.get()
+        
+        # Clear previous weight and bias inputs
+        for widget in self.weights_biases_scrollable_frame.winfo_children():
+            widget.destroy()
+        
+        # Clear previous input function dropdowns
+        for widget in self.input_functions_scrollable_frame.winfo_children():
+            widget.destroy()
+        
+        # Add input function dropdowns for each input neuron
+        ttk.Label(self.input_functions_scrollable_frame, text="Input Functions").pack()
+        self.input_functions = []
+        for i in range(self.num_input_neurons):
+            ttk.Label(self.input_functions_scrollable_frame, text=f"Input Neuron {i + 1}:").pack()
+            input_function = ttk.Combobox(self.input_functions_scrollable_frame, values=["sin", "cos", "tan", "linear"])
+            input_function.current(0)  # Default to "sin"
+            input_function.pack()
+            self.input_functions.append(input_function)
+        
+        # Add weight and bias inputs for hidden layers
+        self.weight_entries = {}
+        self.bias_entries = {}
+        for layer in range(self.num_hidden_layers):
+            ttk.Label(self.weights_biases_scrollable_frame, text=f"Hidden Layer {layer + 1}").grid(row=layer * (self.num_neurons_per_hidden_layer + 1), column=0, columnspan=2, pady=5)
+            
+            for neuron in range(self.num_neurons_per_hidden_layer):
+                row = layer * (self.num_neurons_per_hidden_layer + 1) + neuron + 1
+                neuron_id = f"hidden_{layer}_{neuron}"
+                
+                # Get the number of incoming connections for this neuron
+                incoming_connections = [conn for conn in self.connections if conn[1] == neuron_id]
+                num_weights = len(incoming_connections)
+                
+                # Weights
+                ttk.Label(self.weights_biases_scrollable_frame, text=f"Neuron {neuron + 1} Weights:").grid(row=row, column=0, sticky=tk.W)
+                weight_frame = ttk.Frame(self.weights_biases_scrollable_frame)
+                weight_frame.grid(row=row, column=1, padx=5, pady=2)
+                self.weight_entries[neuron_id] = []
+                for i in range(num_weights):
+                    weight_entry = tk.Entry(weight_frame, width=5, font=("Arial", 10))
+                    weight_entry.insert(0, "0")  # Default weight = 0
+                    weight_entry.grid(row=0, column=i, padx=2)  # Use grid instead of pack
+                    self.weight_entries[neuron_id].append(weight_entry)
+                
+                # Biases
+                ttk.Label(self.weights_biases_scrollable_frame, text=f"Neuron {neuron + 1} Bias:").grid(row=row, column=2, sticky=tk.W)
+                bias_entry = tk.Entry(self.weights_biases_scrollable_frame, width=10, font=("Arial", 10))
+                bias_entry.insert(0, "0")  # Default bias = 0
+                bias_entry.grid(row=row, column=3, padx=5, pady=2)
+                self.bias_entries[neuron_id] = bias_entry
+            
+            # Add a separator line between hidden layers
+            if layer < self.num_hidden_layers - 1:
+                ttk.Separator(self.weights_biases_scrollable_frame, orient=tk.HORIZONTAL).grid(
+                    row=(layer + 1) * (self.num_neurons_per_hidden_layer + 1), column=0, columnspan=4, pady=5, sticky="ew"
+                )
+        
+        # Add weight and bias inputs for output layer
+        ttk.Label(self.weights_biases_scrollable_frame, text="Output Layer").grid(
+            row=self.num_hidden_layers * (self.num_neurons_per_hidden_layer + 1), column=0, columnspan=2, pady=5
+        )
+        
+        for neuron in range(self.num_output_neurons):
+            row = self.num_hidden_layers * (self.num_neurons_per_hidden_layer + 1) + neuron + 1
+            neuron_id = f"output_{neuron}"
+            
+            # Get the number of incoming connections for this neuron
+            incoming_connections = [conn for conn in self.connections if conn[1] == neuron_id]
+            num_weights = len(incoming_connections)
+            
+            # Weights
+            ttk.Label(self.weights_biases_scrollable_frame, text=f"Neuron {neuron + 1} Weights:").grid(row=row, column=0, sticky=tk.W)
+            weight_frame = ttk.Frame(self.weights_biases_scrollable_frame)
+            weight_frame.grid(row=row, column=1, padx=5, pady=2)
+            self.weight_entries[neuron_id] = []
+            for i in range(num_weights):
+                weight_entry = tk.Entry(weight_frame, width=5, font=("Arial", 10))
+                weight_entry.insert(0, "0")  # Default weight = 0
+                weight_entry.grid(row=0, column=i, padx=2)  # Use grid instead of pack
+                self.weight_entries[neuron_id].append(weight_entry)
+            
+            # Biases
+            ttk.Label(self.weights_biases_scrollable_frame, text=f"Neuron {neuron + 1} Bias:").grid(row=row, column=2, sticky=tk.W)
+            bias_entry = tk.Entry(self.weights_biases_scrollable_frame, width=10, font=("Arial", 10))
+            bias_entry.insert(0, "0")  # Default bias = 0
+            bias_entry.grid(row=row, column=3, padx=5, pady=2)
+            self.bias_entries[neuron_id] = bias_entry
+        
+        # Redraw network
+        self.draw_network()
+    
+    def draw_network(self):
+        self.network_canvas.delete("all")
+        x_offset = 50
+        y_offset = 50
+        spacing = 50
+        
+        # Draw input neurons
+        input_neurons = []
+        for i in range(self.num_input_neurons):
+            x1, y1 = x_offset, y_offset + i * spacing
+            x2, y2 = x1 + 30, y1 + 30
+            self.network_canvas.create_oval(x1, y1, x2, y2, fill="blue", tags=f"input_{i}")
+            input_neurons.append(((x1 + x2) / 2, (y1 + y2) / 2))  # Store center of input neurons
+            self.neuron_positions[f"input_{i}"] = ((x1 + x2) / 2, (y1 + y2) / 2)
+        
+        # Draw hidden layers
+        hidden_layers = []
+        x_offset += 100
+        for layer in range(self.num_hidden_layers):
+            neurons = []
+            for neuron in range(self.num_neurons_per_hidden_layer):
+                x1, y1 = x_offset, y_offset + neuron * spacing
+                x2, y2 = x1 + 30, y1 + 30
+                self.network_canvas.create_oval(x1, y1, x2, y2, fill="green", tags=f"hidden_{layer}_{neuron}")
+                neurons.append(((x1 + x2) / 2, (y1 + y2) / 2))  # Store center of hidden neurons
+                self.neuron_positions[f"hidden_{layer}_{neuron}"] = ((x1 + x2) / 2, (y1 + y2) / 2)
+            hidden_layers.append(neurons)
+            x_offset += 100
+        
+        # Draw output neurons
+        output_neurons = []
+        for i in range(self.num_output_neurons):
+            x1, y1 = x_offset, y_offset + i * spacing
+            x2, y2 = x1 + 30, y1 + 30
+            self.network_canvas.create_oval(x1, y1, x2, y2, fill="red", tags=f"output_{i}")
+            output_neurons.append(((x1 + x2) / 2, (y1 + y2) / 2))  # Store center of output neurons
+            self.neuron_positions[f"output_{i}"] = ((x1 + x2) / 2, (y1 + y2) / 2)
+        
+        # Draw connections
+        for connection in self.connections:
+            source, target = connection
+            if source in self.neuron_positions and target in self.neuron_positions:
+                x1, y1 = self.neuron_positions[source]
+                x2, y2 = self.neuron_positions[target]
+                self.network_canvas.create_line(x1, y1, x2, y2, fill="black", tags=f"connection_{source}_{target}")
+        
+        # Bind right-click event to neurons
+        for neuron_id in self.neuron_positions:
+            self.network_canvas.tag_bind(neuron_id, "<Button-3>", self.show_neuron_menu)
+    
+    def show_neuron_menu(self, event):
+        # Get the neuron ID from the clicked item
+        neuron_id = self.network_canvas.gettags("current")[0]
+        
+        # Create a context menu
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="Add Connection", command=lambda: self.add_connection(neuron_id))
+        menu.add_command(label="Delete Connection", command=lambda: self.delete_connection(neuron_id))
+        menu.post(event.x_root, event.y_root)
+    
+    def add_connection(self, source_neuron):
+        # Create a popup window to select the target neuron
+        popup = tk.Toplevel(self.root)
+        popup.title("Add Connection")
+        
+        ttk.Label(popup, text=f"Add connection from {source_neuron} to:").pack(pady=5)
+        
+        # List all neurons as potential targets
+        target_neurons = list(self.neuron_positions.keys())
+        target_neurons.remove(source_neuron)  # Remove source neuron from targets
+        target_var = tk.StringVar(popup)
+        target_var.set(target_neurons[0])  # Default to first target
+        target_menu = ttk.Combobox(popup, textvariable=target_var, values=target_neurons)
+        target_menu.pack(pady=5)
+        
+        # Add button to confirm the connection
+        ttk.Button(popup, text="Add", command=lambda: self.confirm_add_connection(source_neuron, target_var.get(), popup)).pack(pady=5)
+    
+    def confirm_add_connection(self, source, target, popup):
+        # Add the connection if it doesn't already exist
+        if (source, target) not in self.connections:
+            self.connections.append((source, target))
+            self.update_weight_entries(target)  # Update weight input boxes for the target neuron
+            self.draw_network()  # Redraw network to show the new connection
+        popup.destroy()
+    
+    def delete_connection(self, source_neuron):
+        # Create a popup window to select the connection to delete
+        popup = tk.Toplevel(self.root)
+        popup.title("Delete Connection")
+        
+        ttk.Label(popup, text=f"Delete connection from {source_neuron} to:").pack(pady=5)
+        
+        # List all connections involving the source neuron
+        connections = [conn for conn in self.connections if conn[0] == source_neuron]
+        if not connections:
+            messagebox.showinfo("No Connections", f"No connections found from {source_neuron}.")
+            popup.destroy()
+            return
+        
+        target_var = tk.StringVar(popup)
+        target_var.set(connections[0][1])  # Default to first connection
+        target_menu = ttk.Combobox(popup, textvariable=target_var, values=[conn[1] for conn in connections])
+        target_menu.pack(pady=5)
+        
+        # Add button to confirm the deletion
+        ttk.Button(popup, text="Delete", command=lambda: self.confirm_delete_connection(source_neuron, target_var.get(), popup)).pack(pady=5)
+    
+    def confirm_delete_connection(self, source, target, popup):
+        # Remove the connection if it exists
+        if (source, target) in self.connections:
+            self.connections.remove((source, target))
+            self.update_weight_entries(target)  # Update weight input boxes for the target neuron
+            self.draw_network()  # Redraw network to remove the connection
+        popup.destroy()
+    
+    def update_weight_entries(self, neuron_id):
+        # Update weight input boxes for a specific neuron
+        if neuron_id in self.weight_entries:
+            # Clear existing weight entries
+            for widget in self.weight_entries[neuron_id]:
+                widget.destroy()
+            
+            # Get the number of incoming connections for this neuron
+            incoming_connections = [conn for conn in self.connections if conn[1] == neuron_id]
+            num_weights = len(incoming_connections)
+            
+            # Create new weight entries
+            self.weight_entries[neuron_id] = []
+            weight_frame = ttk.Frame(self.weights_biases_scrollable_frame)
+            weight_frame.grid(row=self.get_neuron_row(neuron_id), column=1, padx=5, pady=2)
+            for i in range(num_weights):
+                weight_entry = tk.Entry(weight_frame, width=5, font=("Arial", 10))
+                weight_entry.insert(0, "0")  # Default weight = 0
+                weight_entry.grid(row=0, column=i, padx=2)  # Use grid instead of pack
+                self.weight_entries[neuron_id].append(weight_entry)
+    
+    def get_neuron_row(self, neuron_id):
+        # Helper function to get the row number of a neuron in the weights_biases_scrollable_frame
+        if neuron_id.startswith("hidden"):
+            layer = int(neuron_id.split("_")[1])
+            neuron = int(neuron_id.split("_")[2])
+            return layer * (self.num_neurons_per_hidden_layer + 1) + neuron + 1
+        elif neuron_id.startswith("output"):
+            neuron = int(neuron_id.split("_")[1])
+            return self.num_hidden_layers * (self.num_neurons_per_hidden_layer + 1) + neuron + 1
+        return 0
+    
+    def run_network(self):
+        # Simulate network output
+        self.ax.clear()  # Clear previous plot
+        
+        # Generate input data based on selected input functions
+        x = np.linspace(0, 1, 100)  # x-axis from 0 to 1
+        input_data = []
+        for i, input_function in enumerate(self.input_functions):
+            func = input_function.get()
+            if func == "sin":
+                input_data.append(np.sin(2 * np.pi * x))  # Sine wave with period 1
+            elif func == "cos":
+                input_data.append(np.cos(2 * np.pi * x))  # Cosine wave with period 1
+            elif func == "tan":
+                input_data.append(np.tan(np.pi * x))  # Tangent wave with period 1
+            elif func == "linear":
+                input_data.append(x)  # Linear function
+            else:
+                input_data.append(np.zeros_like(x))  # Default to zero
+        
+        # Simulate neural network output with activation function
+        y_output = self.simulate_network(input_data)
+        
+        # Plot the red sine wave (unchanged)
+        y_sine = np.sin(2 * np.pi * x)  # Red sine wave with period 1
+        self.ax.plot(x, y_sine, color="red", linestyle="-", linewidth=1, label="Sine Wave")
+        
+        # Plot the neural network output
+        self.ax.plot(x, y_output, color="blue", linestyle="-", linewidth=2, label="Network Output")
+        
+        # Set x-axis and y-axis limits
+        self.ax.set_xlim(0, 1)
+        self.ax.set_ylim(-1, 1)
+        
+        # Change axis colors to green
+        for spine in self.ax.spines.values():
+            spine.set_color("green")
+        
+        # Add a light grid to the graph
+        self.ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+        
+        # Add legend and labels
+        self.ax.set_title("Neural Network Output vs Sine Wave")
+        self.ax.set_xlabel("Input")
+        self.ax.set_ylabel("Output")
+        self.ax.legend()
+        
+        # Refresh the graph canvas
+        self.canvas.draw()
+    
+    def simulate_network(self, input_data):
+        # Initialize output
+        y_output = np.zeros_like(input_data[0]) if input_data else np.zeros(100)
+        
+        # Check if there are connections to the output neuron
+        output_connections = [conn for conn in self.connections if conn[1].startswith("output")]
+        if not output_connections:
+            return y_output  # No output if no connections to output neurons
+        
+        # Propagate data through hidden layers
+        layer_output = input_data
+        for layer in range(self.num_hidden_layers):
+            next_layer_output = []
+            for neuron in range(self.num_neurons_per_hidden_layer):
+                neuron_id = f"hidden_{layer}_{neuron}"
+                incoming_connections = [conn for conn in self.connections if conn[1] == neuron_id]
+                
+                # Compute weighted sum
+                weighted_sum = np.zeros_like(layer_output[0]) if layer_output else np.zeros(100)
+                for i, conn in enumerate(incoming_connections):
+                    source = conn[0]
+                    if source.startswith("input"):
+                        source_idx = int(source.split("_")[1])
+                        data = layer_output[source_idx]
+                    elif source.startswith("hidden"):
+                        source_layer = int(source.split("_")[1])
+                        source_neuron = int(source.split("_")[2])
+                        data = layer_output[source_neuron]
+                    else:
+                        data = np.zeros_like(layer_output[0])
+                    
+                    weight = float(self.weight_entries[neuron_id][i].get()) if i < len(self.weight_entries[neuron_id]) else 1.0
+                    weighted_sum += weight * data
+                
+                # Add bias
+                bias = float(self.bias_entries[neuron_id].get()) if neuron_id in self.bias_entries else 0.0
+                weighted_sum += bias
+                
+                # Apply activation function
+                if self.activation_function == "ReLU":
+                    neuron_output = np.maximum(0, weighted_sum)  # ReLU
+                elif self.activation_function == "Step":
+                    neuron_output = np.where(weighted_sum >= 0, 1, 0)  # Step
+                elif self.activation_function == "Sigmoid":
+                    neuron_output = 1 / (1 + np.exp(-weighted_sum))  # Sigmoid
+                
+                next_layer_output.append(neuron_output)
+            
+            layer_output = next_layer_output
+        
+        # Compute final output
+        for neuron in range(self.num_output_neurons):
+            neuron_id = f"output_{neuron}"
+            incoming_connections = [conn for conn in self.connections if conn[1] == neuron_id]
+            
+            weighted_sum = np.zeros_like(layer_output[0]) if layer_output else np.zeros(100)
+            for i, conn in enumerate(incoming_connections):
+                source = conn[0]
+                if source.startswith("hidden"):
+                    source_layer = int(source.split("_")[1])
+                    source_neuron = int(source.split("_")[2])
+                    data = layer_output[source_neuron]
+                else:
+                    data = np.zeros_like(layer_output[0])
+                
+                weight = float(self.weight_entries[neuron_id][i].get()) if i < len(self.weight_entries[neuron_id]) else 1.0
+                weighted_sum += weight * data
+            
+            # Add bias
+            bias = float(self.bias_entries[neuron_id].get()) if neuron_id in self.bias_entries else 0.0
+            weighted_sum += bias
+            
+            y_output += weighted_sum
+        
+        return y_output
+    
+    def update_output(self):
+        # Simulate network output with updated weights and biases
+        self.ax.clear()  # Clear previous plot
+        
+        # Generate input data based on selected input functions
+        x = np.linspace(0, 1, 100)  # x-axis from 0 to 1
+        input_data = []
+        for i, input_function in enumerate(self.input_functions):
+            func = input_function.get()
+            if func == "sin":
+                input_data.append(np.sin(2 * np.pi * x))  # Sine wave with period 1
+            elif func == "cos":
+                input_data.append(np.cos(2 * np.pi * x))  # Cosine wave with period 1
+            elif func == "tan":
+                input_data.append(np.tan(np.pi * x))  # Tangent wave with period 1
+            elif func == "linear":
+                input_data.append(x)  # Linear function
+            else:
+                input_data.append(np.zeros_like(x))  # Default to zero
+        
+        # Simulate neural network output
+        y_output = self.simulate_network(input_data)
+        
+        # Plot the red sine wave (unchanged)
+        y_sine = np.sin(2 * np.pi * x)  # Red sine wave with period 1
+        self.ax.plot(x, y_sine, color="red", linestyle="-", linewidth=1, label="Sine Wave")
+        
+        # Plot the neural network output
+        self.ax.plot(x, y_output, color="blue", linestyle="-", linewidth=2, label="Network Output")
+        
+        # Set x-axis and y-axis limits
+        self.ax.set_xlim(0, 1)
+        self.ax.set_ylim(-1, 1)
+        
+        # Change axis colors to green
+        for spine in self.ax.spines.values():
+            spine.set_color("green")
+        
+        # Add a light grid to the graph
+        self.ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+        
+        # Add legend and labels
+        self.ax.set_title("Neural Network Output vs Sine Wave")
+        self.ax.set_xlabel("Input")
+        self.ax.set_ylabel("Output")
+        self.ax.legend()
+        
+        # Refresh the graph canvas
+        self.canvas.draw()
 
-if __name__ == "__main__":
-    data = fetch_data()
-    send_to_kafka(data)
-    print("Messages sent successfully!")
+# Run application
+root = tk.Tk()
+simulator = NeuralNetworkSimulator(root)
+root.mainloop()
