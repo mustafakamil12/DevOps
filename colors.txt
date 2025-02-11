@@ -290,8 +290,92 @@ class NeuralNetworkSimulator:
         menu = tk.Menu(self.root, tearoff=0)
         menu.add_command(label="Add Connection", command=lambda: self.add_connection(neuron_id))
         menu.add_command(label="Delete Connection", command=lambda: self.delete_connection(neuron_id))
+        menu.add_command(label="Show Output", command=lambda: self.show_neuron_output(neuron_id))  # New option
         menu.post(event.x_root, event.y_root)
-    
+
+    def show_neuron_output(self, neuron_id):
+        # Create a pop-up window
+        popup = tk.Toplevel(self.root)
+        popup.title(f"Output of {neuron_id}")
+        
+        # Generate input data based on selected input functions
+        x = np.linspace(0, 1, 100)  # x-axis from 0 to 1
+        input_data = []
+        for i, input_function in enumerate(self.input_functions):
+            func = input_function.get()
+            if func == "sin":
+                input_data.append(np.sin(2 * np.pi * x))  # Sine wave with period 1
+            elif func == "cos":
+                input_data.append(np.cos(2 * np.pi * x))  # Cosine wave with period 1
+            elif func == "tan":
+                input_data.append(np.tan(np.pi * x))  # Tangent wave with period 1
+            elif func == "linear":
+                input_data.append(x)  # Linear function
+            else:
+                input_data.append(np.zeros_like(x))  # Default to zero
+        
+        # Calculate the output of the selected neuron
+        neuron_output = self.calculate_neuron_output(neuron_id, input_data)
+        
+        # Create a figure and axis for the graph
+        fig, ax = plt.subplots(figsize=(5, 3))
+        ax.plot(x, neuron_output, color="blue", linestyle="-", linewidth=2, label=f"Output of {neuron_id}")
+        
+        # Set x-axis and y-axis limits
+        ax.set_xlim(0, 1)
+        ax.set_ylim(-1, 1)
+        
+        # Add a light grid to the graph
+        ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+        
+        # Add legend and labels
+        ax.set_title(f"Output of {neuron_id}")
+        ax.set_xlabel("Input")
+        ax.set_ylabel("Output")
+        ax.legend()
+        
+        # Embed the graph in the pop-up window
+        canvas = FigureCanvasTkAgg(fig, master=popup)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def calculate_neuron_output(self, neuron_id, input_data):
+        # Initialize output
+        output = np.zeros_like(input_data[0]) if input_data else np.zeros(100)
+        
+        # Check if the neuron is an input neuron
+        if neuron_id.startswith("input"):
+            neuron_index = int(neuron_id.split("_")[1])
+            return input_data[neuron_index]
+        
+        # Check if the neuron is a hidden or output neuron
+        if neuron_id.startswith("hidden") or neuron_id.startswith("output"):
+            incoming_connections = [conn for conn in self.connections if conn[1] == neuron_id]
+            
+            # Compute weighted sum
+            weighted_sum = np.zeros_like(input_data[0]) if input_data else np.zeros(100)
+            for i, conn in enumerate(incoming_connections):
+                source = conn[0]
+                source_output = self.calculate_neuron_output(source, input_data)
+                
+                # Get the weight for this connection
+                weight = float(self.weight_entries[neuron_id][i].get()) if i < len(self.weight_entries[neuron_id]) else 1.0
+                weighted_sum += weight * source_output
+            
+            # Add bias
+            bias = float(self.bias_entries[neuron_id].get()) if neuron_id in self.bias_entries else 0.0
+            weighted_sum += bias
+            
+            # Apply activation function
+            if self.activation_function == "ReLU":
+                output = np.maximum(0, weighted_sum)  # ReLU
+            elif self.activation_function == "Step":
+                output = np.where(weighted_sum >= 0, 1, 0)  # Step
+            elif self.activation_function == "Sigmoid":
+                output = 1 / (1 + np.exp(-weighted_sum))  # Sigmoid
+        
+        return output
+
     def add_connection(self, source_neuron):
         # Create a popup window to select the target neuron
         popup = tk.Toplevel(self.root)
@@ -362,12 +446,22 @@ class NeuralNetworkSimulator:
             # Create new weight entries
             self.weight_entries[neuron_id] = []
             weight_frame = ttk.Frame(self.weights_biases_scrollable_frame)
-            weight_frame.grid(row=self.get_neuron_row(neuron_id), column=1, padx=5, pady=2)
-            for i in range(num_weights):
+            
+            # Determine the row for the weight frame
+            row = self.get_neuron_row(neuron_id)
+            weight_frame.grid(row=row, column=1, padx=5, pady=2, sticky=tk.W)
+            
+            # Add weight entries vertically with labels
+            for i, conn in enumerate(incoming_connections):
+                source_neuron = conn[0]
+                label = ttk.Label(weight_frame, text=f"From {source_neuron}:")
+                label.grid(row=i, column=0, padx=2, pady=2, sticky=tk.W)
+                
                 weight_entry = tk.Entry(weight_frame, width=5, font=("Arial", 10))
                 weight_entry.insert(0, "0")  # Default weight = 0
-                weight_entry.grid(row=0, column=i, padx=2)  # Use grid instead of pack
+                weight_entry.grid(row=i, column=1, padx=2, pady=2)
                 self.weight_entries[neuron_id].append(weight_entry)
+    
     
     def get_neuron_row(self, neuron_id):
         # Helper function to get the row number of a neuron in the weights_biases_scrollable_frame
