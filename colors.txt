@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 
 class NeuralNetworkSimulator:
     def __init__(self, root):
@@ -28,6 +29,9 @@ class NeuralNetworkSimulator:
         
         # Initialize network with default values
         self.update_network()
+        
+        # Toolbar for graph interaction
+        self.toolbar = None  # Initialize toolbar as None
         
     def create_ui(self):
         # Main frame
@@ -338,6 +342,11 @@ class NeuralNetworkSimulator:
         canvas = FigureCanvasTkAgg(fig, master=popup)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Add navigation toolbar for zooming and panning
+        toolbar = NavigationToolbar2Tk(canvas, popup)
+        toolbar.update()
+        toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def calculate_neuron_output(self, neuron_id, input_data):
         # Initialize output
@@ -479,7 +488,7 @@ class NeuralNetworkSimulator:
         self.ax.clear()  # Clear previous plot
         
         # Generate input data based on selected input functions
-        x = np.linspace(0, 1, 100)  # x-axis from 0 to 1
+        x = np.linspace(-1, 1, 100)  # x-axis from -1 to 1
         input_data = []
         for i, input_function in enumerate(self.input_functions):
             func = input_function.get()
@@ -505,7 +514,7 @@ class NeuralNetworkSimulator:
         self.ax.plot(x, y_output, color="blue", linestyle="-", linewidth=2, label="Network Output")
         
         # Set x-axis and y-axis limits
-        self.ax.set_xlim(0, 1)
+        self.ax.set_xlim(-1, 1)  # Updated x-axis range
         self.ax.set_ylim(-1, 1)
         
         # Change axis colors to green
@@ -523,6 +532,11 @@ class NeuralNetworkSimulator:
         
         # Refresh the graph canvas
         self.canvas.draw()
+        
+        # Add or update navigation toolbar
+        if self.toolbar is None:
+            self.toolbar = NavigationToolbar2Tk(self.canvas, self.pane)
+        self.toolbar.update()
     
     def simulate_network(self, input_data):
         # Initialize output
@@ -649,6 +663,11 @@ class NeuralNetworkSimulator:
         
         # Refresh the graph canvas
         self.canvas.draw()
+        
+        # Add or update navigation toolbar
+        if self.toolbar is None:
+            self.toolbar = NavigationToolbar2Tk(self.canvas, self.pane)
+        self.toolbar.update()
 
 # Run application
 root = tk.Tk()
