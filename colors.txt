@@ -299,7 +299,7 @@ class NeuralNetworkSimulator:
         popup.title(f"Output of {neuron_id}")
         
         # Generate input data based on selected input functions
-        x = np.linspace(0, 1, 100)  # x-axis from 0 to 1
+        x = np.linspace(-1, 1, 100)  # x-axis from -1 to 1
         input_data = []
         for i, input_function in enumerate(self.input_functions):
             func = input_function.get()
@@ -322,7 +322,7 @@ class NeuralNetworkSimulator:
         ax.plot(x, neuron_output, color="blue", linestyle="-", linewidth=2, label=f"Output of {neuron_id}")
         
         # Set x-axis and y-axis limits
-        ax.set_xlim(0, 1)
+        ax.set_xlim(-1, 1)  # Updated x-axis range
         ax.set_ylim(-1, 1)
         
         # Add a light grid to the graph
@@ -605,7 +605,7 @@ class NeuralNetworkSimulator:
         self.ax.clear()  # Clear previous plot
         
         # Generate input data based on selected input functions
-        x = np.linspace(0, 1, 100)  # x-axis from 0 to 1
+        x = np.linspace(-1, 1, 100)  # x-axis from -1 to 1
         input_data = []
         for i, input_function in enumerate(self.input_functions):
             func = input_function.get()
@@ -631,7 +631,7 @@ class NeuralNetworkSimulator:
         self.ax.plot(x, y_output, color="blue", linestyle="-", linewidth=2, label="Network Output")
         
         # Set x-axis and y-axis limits
-        self.ax.set_xlim(0, 1)
+        self.ax.set_xlim(-1, 1)  # Updated x-axis range
         self.ax.set_ylim(-1, 1)
         
         # Change axis colors to green
