@@ -325,6 +325,10 @@ class NeuralNetworkSimulator:
         fig, ax = plt.subplots(figsize=(5, 3))
         ax.plot(x, neuron_output, color="blue", linestyle="-", linewidth=2, label=f"Output of {neuron_id}")
         
+        # Add solid black lines at x=0 and y=0
+        ax.axvline(0, color="black", linestyle="-", linewidth=1)  # Vertical line at x=0
+        ax.axhline(0, color="black", linestyle="-", linewidth=1)  # Horizontal line at y=0
+        
         # Set x-axis and y-axis limits
         ax.set_xlim(-1, 1)  # Updated x-axis range
         ax.set_ylim(-1, 1)
@@ -513,6 +517,10 @@ class NeuralNetworkSimulator:
         # Plot the neural network output
         self.ax.plot(x, y_output, color="blue", linestyle="-", linewidth=2, label="Network Output")
         
+        # Add solid black lines at x=0 and y=0
+        self.ax.axvline(0, color="black", linestyle="-", linewidth=1)  # Vertical line at x=0
+        self.ax.axhline(0, color="black", linestyle="-", linewidth=1)  # Horizontal line at y=0
+        
         # Set x-axis and y-axis limits
         self.ax.set_xlim(-1, 1)  # Updated x-axis range
         self.ax.set_ylim(-1, 1)
@@ -643,6 +651,10 @@ class NeuralNetworkSimulator:
         
         # Plot the neural network output
         self.ax.plot(x, y_output, color="blue", linestyle="-", linewidth=2, label="Network Output")
+        
+        # Add solid black lines at x=0 and y=0
+        self.ax.axvline(0, color="black", linestyle="-", linewidth=1)  # Vertical line at x=0
+        self.ax.axhline(0, color="black", linestyle="-", linewidth=1)  # Horizontal line at y=0
         
         # Set x-axis and y-axis limits
         self.ax.set_xlim(-1, 1)  # Updated x-axis range
