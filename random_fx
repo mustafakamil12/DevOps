@@ -1,9 +1,9 @@
 import re
 
 def extract_table_name(query):
-    # Regular expression to match table name inside brackets or after FROM
-    match = re.search(r"from\s+\[?(?:\w+\.)?\w+\.\[(\w+)\]\]?", query, re.IGNORECASE)
-    
+    # Regular expression to match table names in various formats
+    match = re.search(r"from\s+(?:\[[^\]]+\]\.)?(?:\[[^\]]+\]\.)?\[?(\w+)\]?", query, re.IGNORECASE)
+
     if match:
         return f"SELECT * FROM {match.group(1)}"
     else:
