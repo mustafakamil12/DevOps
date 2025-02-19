@@ -13,3 +13,16 @@ def extract_table_name(query):
 query = "Select * from [Dashboard].[dbo].[DatastroeClusters]"
 output = extract_table_name(query)
 print(output)  # Output: SELECT * FROM DatastroeClusters
+
+
+import re
+
+def extract_table_name(input_string):
+    # Match the last part after the last dot (.)
+    match = re.search(r'[^.]+$', input_string)
+    return match.group(0) if match else "Table name not found"
+
+# Example usage
+input_string = "ideas-173543-cudl.VCENTER_DBO_DATASTORE"
+output = extract_table_name(input_string)
+print(output)  # Output: VCENTER_DBO_DATASTORE
