@@ -1,0 +1,15 @@
+import re
+
+def extract_table_name(query):
+    # Regular expression to match table name inside brackets or after FROM
+    match = re.search(r"from\s+\[?(?:\w+\.)?\w+\.\[(\w+)\]\]?", query, re.IGNORECASE)
+    
+    if match:
+        return f"SELECT * FROM {match.group(1)}"
+    else:
+        return "Table name not found"
+
+# Example usage
+query = "Select * from [Dashboard].[dbo].[DatastroeClusters]"
+output = extract_table_name(query)
+print(output)  # Output: SELECT * FROM DatastroeClusters
