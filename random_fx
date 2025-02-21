@@ -26,3 +26,26 @@ def extract_table_name(input_string):
 input_string = "ideas-173543-cudl.VCENTER_DBO_DATASTORE"
 output = extract_table_name(input_string)
 print(output)  # Output: VCENTER_DBO_DATASTORE
+
+
+
+# Register the schemas (if not already registered)
+try:
+    # Register the key schema
+    key_schema_id = schema_registry_client.register_schema(
+        subject_name=f'{kafka_topic}-key',  # Subject name for the key schema
+        schema=key_schema_str,
+        schema_type='AVRO'
+    )
+    print(f"Key schema registered successfully! Schema ID: {key_schema_id}")
+
+    # Register the value schema
+    value_schema_id = schema_registry_client.register_schema(
+        subject_name=f'{kafka_topic}-value',  # Subject name for the value schema
+        schema=value_schema_str,
+        schema_type='AVRO'
+    )
+    print(f"Value schema registered successfully! Schema ID: {value_schema_id}")
+except Exception as e:
+    print(f"Failed to register schema: {e}")
+    exit(1)
