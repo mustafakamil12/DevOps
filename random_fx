@@ -143,6 +143,93 @@ key_schema_id = register_schema_if_not_exists(key_subject, key_schema_str)
 # Register the value schema (if not already registered)
 value_schema_id = register_schema_if_not_exists(value_subject, value_schema_str)
 
+############
+
+import pyodbc
+import json
+
+# MSSQL connection details
+server = 'your_server'
+database = 'your_database'
+username = 'your_username'
+password = 'your_password'
+
+# Table details
+table_name = 'YourTableName'
+schema_name = 'YourSchemaName'  # Replace with your schema name (e.g., 'dbo')
+
+# Connect to MSSQL
+connection_string = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}'
+connection = pyodbc.connect(connection_string)
+cursor = connection.cursor()
+
+# Retrieve column information
+query = f'''
+SELECT 
+    COLUMN_NAME,
+    DATA_TYPE,
+    IS_NULLABLE
+FROM 
+    INFORMATION_SCHEMA.COLUMNS
+WHERE 
+    TABLE_NAME = '{table_name}'
+    AND TABLE_SCHEMA = '{schema_name}';
+'''
+cursor.execute(query)
+columns = cursor.fetchall()
+
+# Map MSSQL data types to Avro data types
+def map_mssql_to_avro_type(mssql_type, is_nullable):
+    type_mapping = {
+        'int': 'int',
+        'bigint': 'long',
+        'smallint': 'int',
+        'tinyint': 'int',
+        'bit': 'boolean',
+        'float': 'double',
+        'real': 'float',
+        'decimal': {'type': 'bytes', 'logicalType': 'decimal', 'precision': 38, 'scale': 18},
+        'numeric': {'type': 'bytes', 'logicalType': 'decimal', 'precision': 38, 'scale': 18},
+        'char': 'string',
+        'varchar': 'string',
+        'nchar': 'string',
+        'nvarchar': 'string',
+        'date': {'type': 'int', 'logicalType': 'date'},
+        'datetime': {'type': 'long', 'logicalType': 'timestamp-millis'},
+        'datetime2': {'type': 'long', 'logicalType': 'timestamp-millis'},
+        'time': {'type': 'int', 'logicalType': 'time-millis'},
+        'binary': 'bytes',
+        'varbinary': 'bytes',
+        'uniqueidentifier': 'string'
+    }
+    avro_type = type_mapping.get(mssql_type.lower(), 'string')  # Default to 'string' if type is not mapped
+    if is_nullable == 'YES':
+        return ['null', avro_type]
+    return avro_type
+
+# Generate Avro schema
+avro_schema = {
+    'type': 'record',
+    'name': table_name,
+    'namespace': schema_name,
+    'fields': []
+}
+
+for column in columns:
+    column_name, data_type, is_nullable = column
+    avro_field = {
+        'name': column_name,
+        'type': map_mssql_to_avro_type(data_type, is_nullable)
+    }
+    avro_schema['fields'].append(avro_field)
+
+# Save Avro schema to a file
+with open(f'{table_name}_schema.avsc', 'w') as f:
+    json.dump(avro_schema, f, indent=4)
+
+print("Avro schema generated successfully!")
+print(json.dumps(avro_schema, indent=4))
+
 if key_schema_id and value_schema_id:
     print("Key and value schemas are ready to use!")
 else:
