@@ -75,3 +75,75 @@ def avro_to_dict(avro_schema):
         python_dict[field_name] = field_type
 
     return python_dict
+
+##########################
+
+
+from confluent_kafka.schema_registry import SchemaRegistryClient
+import json
+
+# Schema Registry URL
+schema_registry_url = 'https://your-schema-registry:8081'
+
+# Path to your certificate file (if using SSL)
+ssl_certificate_path = '/path/to/certificate.pem'
+
+# Define the schema (key and value)
+key_schema_str = '{"type": "int"}'  # Example key schema
+value_schema_str = '''
+{
+  "type": "record",
+  "name": "User",
+  "fields": [
+    {"name": "name", "type": "string"},
+    {"name": "age", "type": "int"},
+    {"name": "timestamp", "type": "long"}
+  ]
+}
+'''
+
+# Schema Registry client configuration
+schema_registry_conf = {
+    'url': schema_registry_url,
+    'ssl.ca.location': ssl_certificate_path  # Optional: For SSL/TLS
+}
+
+# Initialize the Schema Registry client
+schema_registry_client = SchemaRegistryClient(schema_registry_conf)
+
+# Function to check if a schema exists and register it if not
+def register_schema_if_not_exists(subject_name, schema_str):
+    try:
+        # Check if the schema already exists
+        latest_version = schema_registry_client.get_latest_version(subject_name)
+        print(f"Schema already exists for subject '{subject_name}'. Schema ID: {latest_version.schema_id}")
+        return latest_version.schema_id
+    except Exception as e:
+        # If the schema does not exist, register it
+        print(f"Schema does not exist for subject '{subject_name}'. Registering now...")
+        try:
+            schema_id = schema_registry_client.register_schema(
+                subject_name=subject_name,
+                schema=schema_str
+            )
+            print(f"Schema registered successfully! Schema ID: {schema_id}")
+            return schema_id
+        except Exception as e:
+            print(f"Failed to register schema: {e}")
+            return None
+
+# Define the subject names (e.g., <topic-name>-key and <topic-name>-value)
+topic_name = 'your_topic'
+key_subject = f'{topic_name}-key'
+value_subject = f'{topic_name}-value'
+
+# Register the key schema (if not already registered)
+key_schema_id = register_schema_if_not_exists(key_subject, key_schema_str)
+
+# Register the value schema (if not already registered)
+value_schema_id = register_schema_if_not_exists(value_subject, value_schema_str)
+
+if key_schema_id and value_schema_id:
+    print("Key and value schemas are ready to use!")
+else:
+    print("Failed to register one or more schemas.")
