@@ -234,3 +234,43 @@ if key_schema_id and value_schema_id:
     print("Key and value schemas are ready to use!")
 else:
     print("Failed to register one or more schemas.")
+#############
+
+import pyodbc
+
+# MSSQL connection details
+server = 'your_server'
+database = 'your_database'
+username = 'your_username'
+password = 'your_password'
+
+# Table name
+table_name = 'your_table_name'
+
+# Connect to MSSQL
+connection_string = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}'
+connection = pyodbc.connect(connection_string)
+cursor = connection.cursor()
+
+# Step 1: Retrieve column names
+cursor.execute(f'''
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = '{table_name}'
+''')
+columns = [row.COLUMN_NAME for row in cursor.fetchall()]
+print("Column names:", columns)
+
+# Step 2: Fetch rows from the table
+cursor.execute(f'SELECT * FROM {table_name}')
+rows = cursor.fetchall()
+
+# Step 3: Create dictionary template and loop through rows
+for row in rows:
+    # Create a dictionary where keys are column names and values are row values
+    record = {column: row[i] for i, column in enumerate(columns)}
+    print("Record:", record)
+
+# Close the connection
+cursor.close()
+connection.close()
