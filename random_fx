@@ -1,276 +1,72 @@
-import re
-
-def extract_table_name(query):
-    # Regular expression to match table names in various formats
-    match = re.search(r"from\s+(?:\[[^\]]+\]\.)?(?:\[[^\]]+\]\.)?\[?(\w+)\]?", query, re.IGNORECASE)
-
-    if match:
-        return f"SELECT * FROM {match.group(1)}"
-    else:
-        return "Table name not found"
-
-# Example usage
-query = "Select * from [Dashboard].[dbo].[DatastroeClusters]"
-output = extract_table_name(query)
-print(output)  # Output: SELECT * FROM DatastroeClusters
-
-
-import re
-
-def extract_table_name(input_string):
-    # Match the last part after the last dot (.)
-    match = re.search(r'[^.]+$', input_string)
-    return match.group(0) if match else "Table name not found"
-
-# Example usage
-input_string = "ideas-173543-cudl.VCENTER_DBO_DATASTORE"
-output = extract_table_name(input_string)
-print(output)  # Output: VCENTER_DBO_DATASTORE
-
-
-
-# Register the schemas (if not already registered)
-try:
-    # Register the key schema
-    key_schema_id = schema_registry_client.register_schema(
-        subject_name=f'{kafka_topic}-key',  # Subject name for the key schema
-        schema=key_schema_str,
-        schema_type='AVRO'
-    )
-    print(f"Key schema registered successfully! Schema ID: {key_schema_id}")
-
-    # Register the value schema
-    value_schema_id = schema_registry_client.register_schema(
-        subject_name=f'{kafka_topic}-value',  # Subject name for the value schema
-        schema=value_schema_str,
-        schema_type='AVRO'
-    )
-    print(f"Value schema registered successfully! Schema ID: {value_schema_id}")
-except Exception as e:
-    print(f"Failed to register schema: {e}")
-    exit(1)
-
-
-def avro_to_dict(avro_schema):
-    schema_dict = json.loads(avro_schema) if isinstance(avro_schema, str) else avro_schema
-    python_dict = {}
-
-    for field in schema_dict.get("fields", []):
-        field_name = field["name"]
-        field_type = field["type"]
-
-        # Handle nullable fields (list containing "null" and another type)
-        if isinstance(field_type, list):
-            # Extract the first non-null type (ignore "null")
-            non_null_types = [t for t in field_type if t != "null"]
-            field_type = non_null_types[0] if non_null_types else "null"
-
-        # Handle complex types (logical types or Avro records)
-        if isinstance(field_type, dict):
-            if "logicalType" in field_type:
-                field_type = field_type["logicalType"]  # Extract logical type
-            else:
-                field_type = field_type.get("type", "unknown")  # Get the base type
-
-        python_dict[field_name] = field_type
-
-    return python_dict
-
-##########################
-
-
+import threading
+from confluent_kafka import Producer
 from confluent_kafka.schema_registry import SchemaRegistryClient
-import json
+from confluent_kafka.schema_registry.avro import AvroSerializer
+import time
 
-# Schema Registry URL
-schema_registry_url = 'https://your-schema-registry:8081'
+# Kafka & Schema Registry Configuration
+KAFKA_BROKER = 'your-kafka-broker:9092'
+SCHEMA_REGISTRY_URL = 'https://your-schema-registry:8081'
 
-# Path to your certificate file (if using SSL)
-ssl_certificate_path = '/path/to/certificate.pem'
+# Initialize Schema Registry Client
+schema_registry_client = SchemaRegistryClient({'url': SCHEMA_REGISTRY_URL})
 
-# Define the schema (key and value)
-key_schema_str = '{"type": "int"}'  # Example key schema
-value_schema_str = '''
-{
-  "type": "record",
-  "name": "User",
-  "fields": [
-    {"name": "name", "type": "string"},
-    {"name": "age", "type": "int"},
-    {"name": "timestamp", "type": "long"}
-  ]
-}
-'''
-
-# Schema Registry client configuration
-schema_registry_conf = {
-    'url': schema_registry_url,
-    'ssl.ca.location': ssl_certificate_path  # Optional: For SSL/TLS
+# Define topics and their schemas
+topics_schemas = {
+    "topic1": "schema1.avsc",
+    "topic2": "schema2.avsc",
+    "topic3": "schema3.avsc",
+    "topic4": "schema4.avsc"
 }
 
-# Initialize the Schema Registry client
-schema_registry_client = SchemaRegistryClient(schema_registry_conf)
+# Load Avro Schemas
+schemas = {}
+for topic, schema_file in topics_schemas.items():
+    with open(schema_file, 'r') as file:
+        schemas[topic] = file.read()
 
-# Function to check if a schema exists and register it if not
-def register_schema_if_not_exists(subject_name, schema_str):
-    try:
-        # Check if the schema already exists
-        latest_version = schema_registry_client.get_latest_version(subject_name)
-        print(f"Schema already exists for subject '{subject_name}'. Schema ID: {latest_version.schema_id}")
-        return latest_version.schema_id
-    except Exception as e:
-        # If the schema does not exist, register it
-        print(f"Schema does not exist for subject '{subject_name}'. Registering now...")
-        try:
-            schema_id = schema_registry_client.register_schema(
-                subject_name=subject_name,
-                schema=schema_str
-            )
-            print(f"Schema registered successfully! Schema ID: {schema_id}")
-            return schema_id
-        except Exception as e:
-            print(f"Failed to register schema: {e}")
-            return None
+# Sample messages for each topic
+messages = {
+    "topic1": [{"key": "1", "value": {"name": "Alice", "age": 25}}],
+    "topic2": [{"key": "2", "value": {"name": "Bob", "age": 30}}],
+    "topic3": [{"key": "3", "value": {"name": "Charlie", "age": 35}}],
+    "topic4": [{"key": "4", "value": {"name": "David", "age": 40}}],
+}
 
-# Define the subject names (e.g., <topic-name>-key and <topic-name>-value)
-topic_name = 'your_topic'
-key_subject = f'{topic_name}-key'
-value_subject = f'{topic_name}-value'
+# Producer function
+def produce_messages(topic):
+    """Produce messages for a given topic using its schema."""
+    avro_serializer = AvroSerializer(schema_registry_client, schemas[topic])
 
-# Register the key schema (if not already registered)
-key_schema_id = register_schema_if_not_exists(key_subject, key_schema_str)
-
-# Register the value schema (if not already registered)
-value_schema_id = register_schema_if_not_exists(value_subject, value_schema_str)
-
-############
-
-import pyodbc
-import json
-
-# MSSQL connection details
-server = 'your_server'
-database = 'your_database'
-username = 'your_username'
-password = 'your_password'
-
-# Table details
-table_name = 'YourTableName'
-schema_name = 'YourSchemaName'  # Replace with your schema name (e.g., 'dbo')
-
-# Connect to MSSQL
-connection_string = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}'
-connection = pyodbc.connect(connection_string)
-cursor = connection.cursor()
-
-# Retrieve column information
-query = f'''
-SELECT 
-    COLUMN_NAME,
-    DATA_TYPE,
-    IS_NULLABLE
-FROM 
-    INFORMATION_SCHEMA.COLUMNS
-WHERE 
-    TABLE_NAME = '{table_name}'
-    AND TABLE_SCHEMA = '{schema_name}';
-'''
-cursor.execute(query)
-columns = cursor.fetchall()
-
-# Map MSSQL data types to Avro data types
-def map_mssql_to_avro_type(mssql_type, is_nullable):
-    type_mapping = {
-        'int': 'int',
-        'bigint': 'long',
-        'smallint': 'int',
-        'tinyint': 'int',
-        'bit': 'boolean',
-        'float': 'double',
-        'real': 'float',
-        'decimal': {'type': 'bytes', 'logicalType': 'decimal', 'precision': 38, 'scale': 18},
-        'numeric': {'type': 'bytes', 'logicalType': 'decimal', 'precision': 38, 'scale': 18},
-        'char': 'string',
-        'varchar': 'string',
-        'nchar': 'string',
-        'nvarchar': 'string',
-        'date': {'type': 'int', 'logicalType': 'date'},
-        'datetime': {'type': 'long', 'logicalType': 'timestamp-millis'},
-        'datetime2': {'type': 'long', 'logicalType': 'timestamp-millis'},
-        'time': {'type': 'int', 'logicalType': 'time-millis'},
-        'binary': 'bytes',
-        'varbinary': 'bytes',
-        'uniqueidentifier': 'string'
+    producer_conf = {
+        'bootstrap.servers': KAFKA_BROKER,
+        'value.serializer': avro_serializer
     }
-    avro_type = type_mapping.get(mssql_type.lower(), 'string')  # Default to 'string' if type is not mapped
-    if is_nullable == 'YES':
-        return ['null', avro_type]
-    return avro_type
+    
+    producer = Producer(producer_conf)
 
-# Generate Avro schema
-avro_schema = {
-    'type': 'record',
-    'name': table_name,
-    'namespace': schema_name,
-    'fields': []
-}
+    for msg in messages[topic]:
+        producer.produce(topic, key=msg["key"], value=msg["value"])
+    
+    producer.flush()
+    print(f"Finished producing messages to {topic}")
 
-for column in columns:
-    column_name, data_type, is_nullable = column
-    avro_field = {
-        'name': column_name,
-        'type': map_mssql_to_avro_type(data_type, is_nullable)
-    }
-    avro_schema['fields'].append(avro_field)
+# Function to process topics in batches of 2
+def process_in_batches():
+    topic_list = list(topics_schemas.keys())
+    
+    for i in range(0, len(topic_list), 2):  # Process 2 topics at a time
+        threads = []
+        for topic in topic_list[i:i+2]:
+            thread = threading.Thread(target=produce_messages, args=(topic,))
+            threads.append(thread)
+            thread.start()
 
-# Save Avro schema to a file
-with open(f'{table_name}_schema.avsc', 'w') as f:
-    json.dump(avro_schema, f, indent=4)
+        # Wait for the current batch of threads to finish before starting the next
+        for thread in threads:
+            thread.join()
 
-print("Avro schema generated successfully!")
-print(json.dumps(avro_schema, indent=4))
-
-if key_schema_id and value_schema_id:
-    print("Key and value schemas are ready to use!")
-else:
-    print("Failed to register one or more schemas.")
-#############
-
-import pyodbc
-
-# MSSQL connection details
-server = 'your_server'
-database = 'your_database'
-username = 'your_username'
-password = 'your_password'
-
-# Table name
-table_name = 'your_table_name'
-
-# Connect to MSSQL
-connection_string = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}'
-connection = pyodbc.connect(connection_string)
-cursor = connection.cursor()
-
-# Step 1: Retrieve column names
-cursor.execute(f'''
-    SELECT COLUMN_NAME
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_NAME = '{table_name}'
-''')
-columns = [row.COLUMN_NAME for row in cursor.fetchall()]
-print("Column names:", columns)
-
-# Step 2: Fetch rows from the table
-cursor.execute(f'SELECT * FROM {table_name}')
-rows = cursor.fetchall()
-
-# Step 3: Create dictionary template and loop through rows
-for row in rows:
-    # Create a dictionary where keys are column names and values are row values
-    record = {column: row[i] for i, column in enumerate(columns)}
-    print("Record:", record)
-
-# Close the connection
-cursor.close()
-connection.close()
+# Run the producer with threading
+if __name__ == "__main__":
+    process_in_batches()
+    print("All messages sent successfully!")
