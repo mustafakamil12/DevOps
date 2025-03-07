@@ -1,72 +1,21 @@
-import threading
-from confluent_kafka import Producer
-from confluent_kafka.schema_registry import SchemaRegistryClient
-from confluent_kafka.schema_registry.avro import AvroSerializer
-import time
+# Function to call a stored procedure and fetch column names + data
+def execute_stored_procedure(proc_name, params=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-# Kafka & Schema Registry Configuration
-KAFKA_BROKER = 'your-kafka-broker:9092'
-SCHEMA_REGISTRY_URL = 'https://your-schema-registry:8081'
+    # Execute stored procedure
+    if params:
+        cursor.execute(f"EXEC {proc_name}", params)
+    else:
+        cursor.execute(f"EXEC {proc_name}")
 
-# Initialize Schema Registry Client
-schema_registry_client = SchemaRegistryClient({'url': SCHEMA_REGISTRY_URL})
+    # Retrieve column names
+    columns = [column[0] for column in cursor.description]
 
-# Define topics and their schemas
-topics_schemas = {
-    "topic1": "schema1.avsc",
-    "topic2": "schema2.avsc",
-    "topic3": "schema3.avsc",
-    "topic4": "schema4.avsc"
-}
+    # Retrieve all rows as list of dictionaries
+    data = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-# Load Avro Schemas
-schemas = {}
-for topic, schema_file in topics_schemas.items():
-    with open(schema_file, 'r') as file:
-        schemas[topic] = file.read()
+    cursor.close()
+    conn.close()
 
-# Sample messages for each topic
-messages = {
-    "topic1": [{"key": "1", "value": {"name": "Alice", "age": 25}}],
-    "topic2": [{"key": "2", "value": {"name": "Bob", "age": 30}}],
-    "topic3": [{"key": "3", "value": {"name": "Charlie", "age": 35}}],
-    "topic4": [{"key": "4", "value": {"name": "David", "age": 40}}],
-}
-
-# Producer function
-def produce_messages(topic):
-    """Produce messages for a given topic using its schema."""
-    avro_serializer = AvroSerializer(schema_registry_client, schemas[topic])
-
-    producer_conf = {
-        'bootstrap.servers': KAFKA_BROKER,
-        'value.serializer': avro_serializer
-    }
-    
-    producer = Producer(producer_conf)
-
-    for msg in messages[topic]:
-        producer.produce(topic, key=msg["key"], value=msg["value"])
-    
-    producer.flush()
-    print(f"Finished producing messages to {topic}")
-
-# Function to process topics in batches of 2
-def process_in_batches():
-    topic_list = list(topics_schemas.keys())
-    
-    for i in range(0, len(topic_list), 2):  # Process 2 topics at a time
-        threads = []
-        for topic in topic_list[i:i+2]:
-            thread = threading.Thread(target=produce_messages, args=(topic,))
-            threads.append(thread)
-            thread.start()
-
-        # Wait for the current batch of threads to finish before starting the next
-        for thread in threads:
-            thread.join()
-
-# Run the producer with threading
-if __name__ == "__main__":
-    process_in_batches()
-    print("All messages sent successfully!")
+    return columns, data
