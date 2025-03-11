@@ -1,21 +1,23 @@
-# Function to call a stored procedure and fetch column names + data
-def execute_stored_procedure(proc_name, params=None):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+import logging
+import confluent_kafka
 
-    # Execute stored procedure
-    if params:
-        cursor.execute(f"EXEC {proc_name}", params)
-    else:
-        cursor.execute(f"EXEC {proc_name}")
+# Configure root logger for the app
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-    # Retrieve column names
-    columns = [column[0] for column in cursor.description]
+# Suppress logging for confluent_kafka
+logging.getLogger("confluent_kafka").setLevel(logging.CRITICAL)
+logging.getLogger("confluent_kafka.admin").setLevel(logging.CRITICAL)  # If using Kafka Admin API
 
-    # Retrieve all rows as list of dictionaries
-    data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+# Suppress logs from underlying HTTP requests (used by confluent_kafka)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # If using httpx
 
-    cursor.close()
-    conn.close()
+# Ensure that no extra handlers re-enable logging
+logging.getLogger("confluent_kafka").propagate = False
+logging.getLogger("urllib3").propagate = False
+logging.getLogger("requests").propagate = False
+logging.getLogger("httpx").propagate = False
 
-    return columns, data
+# Example logging in the app
+logging.info("This is an info message from the application.")
