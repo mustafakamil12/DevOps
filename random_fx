@@ -1,96 +1,18 @@
-# Build new image depending on RHEL latest
-FROM registry.access.redhat.com/ubi8/ubi
+import re
+import datetime
 
-# Identify the maintainer of the image
-LABEL version="0.0.1"
-LABEL maintainer="godric.phoenix@gmail.com"
+# Get current date in YYYY-MM-DD format
+current_date = datetime.datetime.now().strftime("%Y-%m-%d")
 
-# Install required dependencies
-RUN yum update -y && \
-    yum install -y wget iputils bind-utils net-tools vim systemd unzip ncurses gcc python3 python3-pip unixODBC unixODBC-devel openssl-devel libaio openssl gcc-c++ python3-devel
-#     yum clean all
+# Construct the regex pattern
+pattern = rf"PVWA Compliance Report with CISARAID-[A-Z]+_RPA_{current_date}-\d{{6}}\.csv"
 
-# Set ACCEPT_EULA environment variable
-ENV ACCEPT_EULA=Y
-ENV SA_PASSWORD=P@ssw0rd
+# Test cases
+file1 = "PVWA Compliance Report with CISARAID-NAM_RPA_2025-03-18-140042.csv"
+file2 = "PVWA Compliance Report with CISARAID-APAC_RPA_2025-03-18-141011.csv"
+file3 = "PVWA Compliance Report with CISARAID-NAM_RPA_2025-03-17-140042.csv"  # Old date (should not match)
 
-RUN sleep 3
-
-# Download the Oracle Instant Client RPM package
-RUN wget https://download.oracle.com/otn_software/linux/instantclient/2113000/oracle-instantclient-basic-21.13.0.0.0-1.el8.x86_64.rpm \
-    --header="Cookie: oraclelicense=accept-securebackup-cookie" \
-    -O /tmp/oracle-instantclient-basic-21.13.0.0.0-1.x86_64.rpm
-
-# Install the RPM package
-RUN rpm -ivh /tmp/oracle-instantclient-basic-21.13.0.0.0-1.x86_64.rpm && \
-    rm -f /tmp/oracle-instantclient-basic-21.13.0.0.0-1.x86_64.rpm
-
-# Set up environment variables
-ENV LD_LIBRARY_PATH=/usr/lib/oracle/21/client64/lib:$LD_LIBRARY_PATH
-ENV PATH=/usr/lib/oracle/21/client64/bin:$PATH
-
-# Set up environment variables for Python
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-
-# Copy the shell script to the container
-COPY register_set.sh /tmp/register_set.sh
-
-# Run the shell script
-RUN  chmod +x /tmp/register_set.sh
-RUN /bin/bash /tmp/register_set.sh 
-RUN sleep 5
-
-# Download the ODBC driver package
-RUN wget https://packages.microsoft.com/rhel/7/prod/Packages/m/msodbcsql17-17.8.1.1-1.x86_64.rpm msodbcsql17.rpm
-RUN rpm -ivh msodbcsql17-17.8.1.1-1.x86_64.rpm
-
-
-# Set up ODBC configuration
-RUN echo "[ODBC Driver 17 for SQL Server]" >> /etc/odbcinst.ini && \
-    echo "Description = Microsoft ODBC Driver 17 for SQL Server" >> /etc/odbcinst.ini && \
-    # Verify that the driver path is correct for the installed version
-    echo "Driver = /opt/microsoft/msodbcsql17/lib64/libmsodbcsql-17.8.so.1.1" >> /etc/odbcinst.ini && \
-    echo "UsageCount = 1" >> /etc/odbcinst.ini
-
-
-# Set up environment variables for ODBC Driver
-ENV ODBCINI=/etc/odbc.ini
-ENV ODBCSYSINI=/etc
-
-
-# Download and install Google Chrome
-RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm && \
-    yum -y localinstall google-chrome-stable_current_x86_64.rpm
-
-# Add /usr/local/bin to the PATH
-ENV PATH="/usr/local/bin:${PATH}"
-
-# Download chromedriver and move it to /usr/local/bin
-RUN wget https://storage.googleapis.com/chrome-for-testing-public/122.0.6261.128/linux64/chromedriver-linux64.zip -O /tmp/chromedriver_linux64.zip && \
-    unzip -oj /tmp/chromedriver_linux64.zip -d /usr/local/bin && \
-    rm -f /tmp/chromedriver_linux64.zip
-
-
-# Create a directory for our application code and set it as the working directory
-WORKDIR /app
-
-# Add requirements.txt file to the container
-ADD ./requirements.txt /app/
-
-# Install python-ldap dependencies using pip
-RUN yum install openldap-devel -y
-
-# Install all dependencies listed in requirements.txt
-RUN pip3 install --upgrade pip && pip3 install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the project's files
-ADD ./app.py /app/
-
-# Copy krb5.conf file to the destination
-COPY krb5.conf /etc/krb5.conf
-
-# Clean up Kerberos configuration file
-RUN chmod 644 /etc/krb5.conf
-
-# CMD [ "python3", "app" ]
+# Check matches
+print(bool(re.match(pattern, file1)))  # ✅ True
+print(bool(re.match(pattern, file2)))  # ✅ True
+print(bool(re.match(pattern, file3)))  # ❌ False (old date)
