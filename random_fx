@@ -16,3 +16,11 @@ file3 = "PVWA Compliance Report with CISARAID-NAM_RPA_2025-03-17-140042.csv"  # 
 print(bool(re.match(pattern, file1)))  # ✅ True
 print(bool(re.match(pattern, file2)))  # ✅ True
 print(bool(re.match(pattern, file3)))  # ❌ False (old date)
+
+
+import datetime
+
+# Get yesterday's date
+yesterday_date = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+
+print("Yesterday's Date:", yesterday_date)
