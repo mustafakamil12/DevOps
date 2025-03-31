@@ -1,141 +1,46 @@
-To design and implement a Python application that uses a neural network to monitor and manage your application ecosystem, you can follow these steps:
-
-### 1. **Define the Problem and Requirements**
-   - **Objective**: Monitor and manage Python applications that are scheduled to run at specific times but sometimes fail due to various issues.
-   - **Requirements**:
-     - Check the `my_tracker` table in an MSSQL database to identify which applications did not run today.
-     - Monitor CPU, memory, and network traffic.
-     - Check database health before attempting to restart the failed applications.
-     - Use a neural network to predict and handle potential failures.
-
-### 2. **Set Up the Environment**
-   - **Python Libraries**:
-     - `pyodbc` or `pymssql` for connecting to MSSQL.
-     - `psutil` for monitoring CPU and memory usage.
-     - `scikit-learn` or `tensorflow`/`keras` for implementing the neural network.
-     - `pandas` for data manipulation.
-     - `numpy` for numerical operations.
-   - **Database**: Ensure you have access to the MSSQL database and the necessary credentials.
-
-### 3. **Database Schema**
-   - Ensure the `my_tracker` table has the following columns:
-     - `app_name`: Name of the application.
-     - `run_date`: Date the application was supposed to run.
-     - `status`: Status of the application (e.g., "Success", "Failed", "Not Run").
-
-### 4. **Implement the Application**
-
-#### 4.1. **Connect to MSSQL Database**
-```python
-import pyodbc
-
-def connect_to_db():
-    conn = pyodbc.connect(
-        'DRIVER={ODBC Driver 17 for SQL Server};'
-        'SERVER=your_server_name;'
-        'DATABASE=your_database_name;'
-        'UID=your_username;'
-        'PWD=your_password'
-    )
-    return conn
-```
-
-#### 4.2. **Check Which Applications Did Not Run Today**
-```python
 import pandas as pd
-from datetime import datetime
 
-def get_failed_apps(conn):
-    query = """
-    SELECT app_name
-    FROM my_tracker
-    WHERE run_date = ? AND status != 'Success'
+def map_and_align_columns(source_path, column_mapping):
     """
-    today = datetime.today().strftime('%Y-%m-%d')
-    df = pd.read_sql(query, conn, params=(today,))
-    return df['app_name'].tolist()
-```
+    Reads a CSV file, maps the column names to match the destination table, 
+    and returns an aligned DataFrame.
 
-#### 4.3. **Monitor System Resources**
-```python
-import psutil
+    Parameters:
+        source_path (str): Path to the CSV file.
+        column_mapping (dict): Dictionary mapping source column names to destination column names.
 
-def monitor_system_resources():
-    cpu_usage = psutil.cpu_percent(interval=1)
-    memory_usage = psutil.virtual_memory().percent
-    network_io = psutil.net_io_counters()
-    return cpu_usage, memory_usage, network_io
-```
+    Returns:
+        pd.DataFrame: Transformed DataFrame ready for insertion into the database.
+    """
+    # Read the CSV file
+    df = pd.read_csv(source_path)
 
-#### 4.4. **Check Database Health**
-```python
-def check_db_health(conn):
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1")
-        return True
-    except Exception as e:
-        print(f"Database health check failed: {e}")
-        return False
-```
+    # Rename columns based on the mapping
+    df.rename(columns=column_mapping, inplace=True)
 
-#### 4.5. **Neural Network for Failure Prediction**
-```python
-from sklearn.neural_network import MLPClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+    # Ensure the final DataFrame matches the exact order of destination table columns
+    destination_columns = list(column_mapping.values())  # Extract ordered column names
+    df = df[destination_columns]  # Reorder columns
 
-def train_neural_network(X, y):
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = MLPClassifier(hidden_layer_sizes=(10, 10), max_iter=1000)
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    print(f"Model Accuracy: {accuracy_score(y_test, y_pred)}")
-    return model
-```
+    return df
 
-#### 4.6. **Main Function to Orchestrate the Process**
-```python
-def main():
-    conn = connect_to_db()
-    failed_apps = get_failed_apps(conn)
-    
-    if failed_apps:
-        cpu_usage, memory_usage, network_io = monitor_system_resources()
-        db_healthy = check_db_health(conn)
-        
-        if db_healthy:
-            # Assuming you have historical data to train the model
-            # X = features (e.g., cpu_usage, memory_usage, network_io, etc.)
-            # y = labels (e.g., 1 for success, 0 for failure)
-            # model = train_neural_network(X, y)
-            
-            # For now, let's just restart the failed apps
-            for app in failed_apps:
-                print(f"Restarting {app}...")
-                # Add code to restart the application
-        else:
-            print("Database is not healthy. Cannot restart applications.")
-    else:
-        print("All applications ran successfully today.")
-    
-    conn.close()
-
+# Example usage
 if __name__ == "__main__":
-    main()
-```
+    # Define the source CSV file path
+    csv_path = "W:\\source_data.csv"
 
-### 5. **Deploy and Schedule**
-   - Deploy the script on a server that has access to the MSSQL database and the applications.
-   - Schedule the script to run at a specific time using a task scheduler (e.g., cron on Linux or Task Scheduler on Windows).
+    # Define the column mapping (Source → Destination)
+    column_mapping = {
+        "name_1": "name",
+        "age_(test)": "age",
+        "class_now": "class"
+    }
 
-### 6. **Future Enhancements**
-   - **Data Collection**: Collect more data over time to improve the neural network's accuracy.
-   - **Alerting**: Integrate with an alerting system (e.g., email, Slack) to notify when applications fail.
-   - **Logging**: Implement logging for better debugging and monitoring.
+    # Get the transformed DataFrame
+    aligned_df = map_and_align_columns(csv_path, column_mapping)
 
-### 7. **Testing**
-   - Test the application in a staging environment before deploying it to production.
-   - Simulate failures to ensure the script can detect and handle them correctly.
+    # Print the DataFrame (or insert into database)
+    print(aligned_df.head())
 
-This is a basic implementation. Depending on your specific requirements, you may need to add more features or refine the existing ones.
+    # Optionally, save the transformed data to a new CSV file
+    aligned_df.to_csv("W:\\aligned_data.csv", index=False)
