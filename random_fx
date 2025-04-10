@@ -1,56 +1,29 @@
 import time
 import csv
-import math
-import concurrent.futures
+import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 
-# ----- Headless Browser Setup for Async Tasks -----
-def create_headless_driver():
-    options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    return driver
+def create_driver(headless=False):
+    chrome_options = Options()
+    if headless:
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+    else:
+        chrome_options.add_argument("--start-maximized")
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-# ----- Scrape System Type and Number of Sockets from a model URL -----
-def scrape_model_details(model_info):
-    model, url = model_info
-    try:
-        driver = create_headless_driver()
-        wait = WebDriverWait(driver, 15)
-        driver.get(url)
-
-        system_type_element = wait.until(
-            EC.presence_of_element_located((By.XPATH, "//*[@id='search-container']/div[2]/div/div/div[2]/div/div[4]/div"))
-        )
-        system_type = system_type_element.text.strip()
-
-        num_sockets_element = wait.until(
-            EC.presence_of_element_located((By.XPATH, "//*[@id='search-container']/div[2]/div/div/div[2]/div/div[5]/div"))
-        )
-        num_sockets = num_sockets_element.text.strip()
-
-        driver.quit()
-        return (model, system_type, num_sockets)
-    except Exception as e:
-        print(f"⚠️ Detail scrape error for {model}: {e}")
-        driver.quit()
-        return (model, '', '')
-
-# ----- Main Web Scraper -----
 def safe_click(driver, wait, xpath, max_retries=5, wait_time=2):
-    from selenium.common.exceptions import ElementClickInterceptedException
     for attempt in range(max_retries):
         try:
             element = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
@@ -66,10 +39,55 @@ def safe_click(driver, wait, xpath, max_retries=5, wait_time=2):
             return False
     return False
 
+# Headless detail scraper
+async def scrape_model_details(session_id, model_name, model_url):
+    system_type = "N/A"
+    num_sockets = "N/A"
+
+    try:
+        driver = create_driver(headless=True)
+        wait = WebDriverWait(driver, 15)
+        driver.get(model_url)
+        print(f"🔍 [{session_id}] Scraping details for: {model_name}")
+
+        try:
+            system_type = wait.until(EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="search-container"]/div[2]/div/div/div[2]/div/div[4]/div'))).text.strip()
+        except:
+            print(f"⚠️ System Type not found for {model_name}")
+
+        try:
+            num_sockets = wait.until(EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="search-container"]/div[2]/div/div/div[2]/div/div[5]/div'))).text.strip()
+        except:
+            print(f"⚠️ Number of Sockets not found for {model_name}")
+
+        driver.quit()
+    except Exception as e:
+        print(f"💥 Detail scrape error for {model_name}: {e}")
+
+    return (model_url, system_type, num_sockets)
+
+async def batch_scrape_model_details(rows, batch_size=10):
+    all_results = []
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        tasks = [
+            scrape_model_details(i + idx + 1, row[1], row[2])
+            for idx, row in enumerate(batch) if row[2]
+        ]
+        batch_results = await asyncio.gather(*tasks)
+        model_details_map = {url: (stype, nsockets) for url, stype, nsockets in batch_results}
+        for row in batch:
+            url = row[2]
+            stype, nsockets = model_details_map.get(url, ("N/A", "N/A"))
+            all_results.append(row + [stype, nsockets])
+    return all_results
+
+# Main scraping process
 def main():
-    options = Options()
-    options.add_argument("--start-maximized")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    start = time.time()
+    driver = create_driver(headless=False)
     wait = WebDriverWait(driver, 20)
 
     try:
@@ -97,15 +115,17 @@ def main():
         try:
             print("🎮 Using keyboard navigation to select 500 items...")
             wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
+
             dropdown_xpath = "//*[@id='results-container']/div[2]/div[1]/button"
             dropdown_button = wait.until(EC.element_to_be_clickable((By.XPATH, dropdown_xpath)))
             driver.execute_script("arguments[0].scrollIntoView(true);", dropdown_button)
             time.sleep(0.5)
+
             dropdown_button.click()
             print("🔽 Dropdown clicked")
 
             actions = ActionChains(driver)
-            for _ in range(4):
+            for _ in range(4):  # Navigate to '500'
                 actions.send_keys(Keys.ARROW_DOWN)
                 time.sleep(0.3)
             actions.send_keys(Keys.ENTER)
@@ -116,13 +136,11 @@ def main():
         except Exception as e:
             print(f"💥 Error selecting 500 with keyboard: {e}")
 
-        wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[2]/div[3]/div[2]/div/div/div/div[3]/div/div/div/div[1]/table/tbody")))
-        rows = driver.find_elements(By.XPATH, "/html/body/div[1]/div[2]/div[3]/div[2]/div/div/div/div[3]/div/div/div/div[1]/table/tbody/tr")
+        wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody")))
+        rows = driver.find_elements(By.XPATH, "//table/tbody/tr")
         print(f"📄 Found {len(rows)} rows")
 
         results = []
-        model_lookup = {}
-
         for row in rows:
             try:
                 partner_name = row.find_element(By.CLASS_NAME, "sip-table-partnerName").text.strip()
@@ -131,34 +149,19 @@ def main():
                 model_url = model_cell.find_element(By.TAG_NAME, "a").get_attribute("href") if model_cell.find_elements(By.TAG_NAME, "a") else ""
                 cpu_series = row.find_element(By.CLASS_NAME, "sip-table-cpuSeries").text.strip()
                 supported_releases = row.find_element(By.CLASS_NAME, "sip-table-supportedReleases").text.strip()
-
-                results.append([partner_name, model, model_url, cpu_series, supported_releases, '', ''])
-                if model_url:
-                    model_lookup[model] = model_url
+                results.append([partner_name, model, model_url, cpu_series, supported_releases])
             except Exception as e:
                 print(f"⚠️ Skipping row due to error: {e}")
 
-        # Process model detail scraping in chunks of 25
-        model_items = list(model_lookup.items())
-        chunk_size = 25
-        for i in range(0, len(model_items), chunk_size):
-            chunk = model_items[i:i + chunk_size]
-            print(f"🔍 Scraping batch {i+1} to {i+len(chunk)}...")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=25) as executor:
-                detail_results = executor.map(scrape_model_details, chunk)
-                for model, system_type, num_sockets in detail_results:
-                    for row in results:
-                        if row[1] == model:
-                            row[5] = system_type
-                            row[6] = num_sockets
-                            break
+        print("⏳ Starting async model detail scraping...")
+        detailed_results = asyncio.run(batch_scrape_model_details(results))
 
-        with open("vm_server.csv", mode="w", newline="", encoding="utf-8") as f:
+        with open("vm_server_detailed.csv", mode="w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(["Partner Name", "Model", "Model URL", "CPU Series", "Supported Releases", "System Type", "Number of Sockets"])
-            writer.writerows(results)
-
-        print("✅ Done! Data saved to 'vm_server.csv' 🎉")
+            writer.writerows(detailed_results)
+        print(f"time elapsed = {time.time() - start}")
+        print("✅ Done! Data saved to 'vm_server_detailed.csv' 🎉")
 
     finally:
         driver.quit()
