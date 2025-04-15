@@ -1,11 +1,183 @@
-from pathlib import Path
+import time
+import csv
+import asyncio
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 
-try:
-    base_path = Path(__file__).resolve().parent.parent  # if running from a script
-except NameError:
-    base_path = Path.cwd()  # fallback if in notebook or interactive
+def create_driver(headless=False):
+    chrome_options = Options()
+    if headless:
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+    else:
+        chrome_options.add_argument("--start-maximized")
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-schema_path = base_path / "schema_folder" / "test.avsc"
+def safe_click(driver, wait, xpath, max_retries=5, wait_time=2):
+    for attempt in range(max_retries):
+        try:
+            element = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+            driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            time.sleep(0.5)
+            element.click()
+            return True
+        except ElementClickInterceptedException:
+            print(f"⏳ Click intercepted. Retrying ({attempt+1}/{max_retries})...")
+            time.sleep(wait_time)
+        except TimeoutException:
+            print(f"❌ Timeout waiting for element at {xpath}")
+            return False
+    return False
 
-with schema_path.open("r", encoding="utf-8") as f:
-    schema = f.read()
+# Headless detail scraper
+async def scrape_model_details(session_id, model_name, model_url):
+    system_type = "N/A"
+    num_sockets = "N/A"
+
+    try:
+        driver = create_driver(headless=True)
+        wait = WebDriverWait(driver, 15)
+        driver.get(model_url)
+        print(f"🔍 [{session_id}] Scraping details for: {model_name}")
+
+        try:
+            system_type = wait.until(EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="search-container"]/div[2]/div/div/div[2]/div/div[4]/div'))).text.strip()
+        except:
+            print(f"⚠️ System Type not found for {model_name}")
+
+        try:
+            num_sockets = wait.until(EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="search-container"]/div[2]/div/div/div[2]/div/div[5]/div'))).text.strip()
+        except:
+            print(f"⚠️ Number of Sockets not found for {model_name}")
+
+        driver.quit()
+    except Exception as e:
+        print(f"💥 Detail scrape error for {model_name}: {e}")
+
+    return (model_url, system_type, num_sockets)
+
+async def batch_scrape_model_details(rows, batch_size=10):
+    all_results = []
+    model_details_cache = {}  # 🧠 Temp repo for caching
+
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        tasks = []
+
+        for idx, row in enumerate(batch):
+            url = row[2]
+            if url and url not in model_details_cache:
+                tasks.append(scrape_model_details(i + idx + 1, row[1], url))
+
+        # Await only the *new* URLs
+        batch_results = await asyncio.gather(*tasks)
+
+        # Store results in cache
+        for url, stype, nsockets in batch_results:
+            model_details_cache[url] = (stype, nsockets)
+
+        # Now go through the batch again and populate from cache
+        for row in batch:
+            url = row[2]
+            stype, nsockets = model_details_cache.get(url, ("N/A", "N/A"))
+            all_results.append(row + [stype, nsockets])
+
+    return all_results
+
+
+# Main scraping process
+def main():
+    start = time.time()
+    driver = create_driver(headless=False)
+    wait = WebDriverWait(driver, 20)
+
+    try:
+        driver.get("https://compatibilityguide.broadcom.com/")
+        print("🌐 Opened Broadcom Compatibility Guide")
+
+        systems_link = wait.until(EC.element_to_be_clickable((
+            By.XPATH, "//a[contains(@class, 'compGuide-link') and contains(text(), 'Systems / Servers')]"
+        )))
+        driver.execute_script("arguments[0].click();", systems_link)
+        print("✅ Clicked 'Systems / Servers'")
+
+        wait.until(EC.presence_of_element_located((By.XPATH, "//b[contains(text(),'Partner Name')]")))
+        time.sleep(2)
+
+        dell_checkbox_xpath = '//*[@id="search-container"]/div[3]/div[2]/div/div/div/div[2]/div/div/div[8]/div[1]/form/div/div[2]/div[25]/div/label/input'
+        dell_checkbox = wait.until(EC.presence_of_element_located((By.XPATH, dell_checkbox_xpath)))
+        driver.execute_script("arguments[0].click();", dell_checkbox)
+        print("✅ Selected 'Dell'")
+
+        view_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'View Results')]")))
+        view_button.click()
+        print("🔍 Clicked 'View Results'")
+
+        try:
+            print("🎮 Using keyboard navigation to select 500 items...")
+            wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
+
+            dropdown_xpath = "//*[@id='results-container']/div[2]/div[1]/button"
+            dropdown_button = wait.until(EC.element_to_be_clickable((By.XPATH, dropdown_xpath)))
+            driver.execute_script("arguments[0].scrollIntoView(true);", dropdown_button)
+            time.sleep(0.5)
+
+            dropdown_button.click()
+            print("🔽 Dropdown clicked")
+
+            actions = ActionChains(driver)
+            for _ in range(4):  # Navigate to '500'
+                actions.send_keys(Keys.ARROW_DOWN)
+                time.sleep(0.3)
+            actions.send_keys(Keys.ENTER)
+            actions.perform()
+
+            wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
+            print("✅ Selected '500' rows using keyboard")
+        except Exception as e:
+            print(f"💥 Error selecting 500 with keyboard: {e}")
+
+        wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody")))
+        rows = driver.find_elements(By.XPATH, "//table/tbody/tr")
+        print(f"📄 Found {len(rows)} rows")
+
+        results = []
+        for row in rows:
+            try:
+                partner_name = row.find_element(By.CLASS_NAME, "sip-table-partnerName").text.strip()
+                model_cell = row.find_element(By.CLASS_NAME, "sip-table-model")
+                model = model_cell.text.strip()
+                model_url = model_cell.find_element(By.TAG_NAME, "a").get_attribute("href") if model_cell.find_elements(By.TAG_NAME, "a") else ""
+                cpu_series = row.find_element(By.CLASS_NAME, "sip-table-cpuSeries").text.strip()
+                supported_releases = row.find_element(By.CLASS_NAME, "sip-table-supportedReleases").text.strip()
+                results.append([partner_name, model, model_url, cpu_series, supported_releases])
+            except Exception as e:
+                print(f"⚠️ Skipping row due to error: {e}")
+
+        print("⏳ Starting async model detail scraping...")
+        detailed_results = asyncio.run(batch_scrape_model_details(results))
+
+        with open("vm_server_detailed.csv", mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Partner Name", "Model", "Model URL", "CPU Series", "Supported Releases", "System Type", "Number of Sockets"])
+            writer.writerows(detailed_results)
+        print(f"time elapsed = {time.time() - start}")
+        print("✅ Done! Data saved to 'vm_server_detailed.csv' 🎉")
+
+    finally:
+        driver.quit()
+
+if __name__ == "__main__":
+    main()
