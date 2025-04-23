@@ -1,57 +1,174 @@
-import pyodbc
-from openpyxl import Workbook
-from openpyxl.utils import get_column_letter
+import time
+import csv
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 
-def export_mssql_to_xlsb(server, database, username, password, query, output_file):
+# Setup Chrome WebDriver
+options = Options()
+options.add_argument("--start-maximized")
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+wait = WebDriverWait(driver, 20)
+
+def safe_click(xpath, max_retries=5, wait_time=2):
+    """Try to click an element, retrying if intercepted"""
+    for attempt in range(max_retries):
+        try:
+            element = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+            driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            time.sleep(0.5)
+            element.click()
+            return True
+        except ElementClickInterceptedException:
+            print(f"⏳ Click intercepted. Retrying ({attempt+1}/{max_retries})...")
+            time.sleep(wait_time)
+        except TimeoutException:
+            print(f"❌ Timeout waiting for element at {xpath}")
+            return False
+    return False
+
+try:
+    # Step 1: Go to the site
+    driver.get("https://compatibilityguide.broadcom.com/")
+    print("🌐 Opened Broadcom Compatibility Guide")
+
+    # Step 2: Click "Systems / Servers"
+    systems_link = wait.until(EC.element_to_be_clickable((
+        By.XPATH, "//a[contains(@class, 'compGuide-link') and contains(text(), 'Systems / Servers')]"
+    )))
+    driver.execute_script("arguments[0].click();", systems_link)
+    print("✅ Clicked 'Systems / Servers'")
+
+    # Step 3: Wait for Partner Name to appear
+    wait.until(EC.presence_of_element_located((By.XPATH, "//b[contains(text(),'Partner Name')]")))
+    time.sleep(2)
+
+    # Step 4: Check 'Dell'
+    dell_checkbox_xpath = '//*[@id="search-container"]/div[3]/div[2]/div/div/div/div[2]/div/div/div[8]/div[1]/form/div/div[2]/div[25]/div/label/input'
+    dell_checkbox = wait.until(EC.presence_of_element_located((By.XPATH, dell_checkbox_xpath)))
+    driver.execute_script("arguments[0].click();", dell_checkbox)
+    print("✅ Selected 'Dell'")
+
+    # Step 5: Click "View Results"
+    view_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'View Results')]")))
+    view_button.click()
+    print("🔍 Clicked 'View Results'")
+
+    # Step 6: Wait for loader and simulate keyboard nav to select 500
     try:
-        # Create connection string (platform-dependent)
-        if platform.system() == 'Windows':
-            conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}'
-        else:
-            conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}'
-        
-        # Connect to SQL Server
-        conn = pyodbc.connect(conn_str)
-        cursor = conn.cursor()
-        
-        # Execute query
-        cursor.execute(query)
-        
-        # Create Excel workbook
-        wb = Workbook()
-        ws = wb.active
-        
-        # Write column headers
-        columns = [column[0] for column in cursor.description]
-        for col_num, column in enumerate(columns, 1):
-            ws.cell(row=1, column=col_num, value=column)
-        
-        # Write data rows
-        for row_num, row in enumerate(cursor.fetchall(), 2):
-            for col_num, cell_value in enumerate(row, 1):
-                ws.cell(row=row_num, column=col_num, value=cell_value)
-        
-        # Save as XLSB (Note: openpyxl only supports XLSX natively)
-        # For actual XLSB, we'd need to use pyxlsb or convert after saving
-        wb.save(output_file.replace('.xlsb', '.xlsx'))  # Save as XLSX
-        
-        print(f"Data exported successfully to {output_file}")
-        
-    except Exception as e:
-        print(f"Error: {str(e)}")
-    finally:
-        if 'conn' in locals():
-            conn.close()
+        print("🎮 Using keyboard navigation to select 500 items...")
 
-# Example usage
-if __name__ == "__main__":
-    import platform
-    
-    server = 'your_server'
-    database = 'your_db'
-    username = 'your_username'
-    password = 'your_password'
-    query = 'SELECT * FROM your_table'
-    output_file = 'output.xlsb'
-    
-    export_mssql_to_xlsb(server, database, username, password, query, output_file)
+        # Wait for loader to disappear first!
+        wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
+
+        dropdown_xpath = "//*[@id='results-container']/div[2]/div[1]/button"
+        dropdown_button = wait.until(EC.element_to_be_clickable((By.XPATH, dropdown_xpath)))
+
+        # Scroll into view for safety
+        driver.execute_script("arguments[0].scrollIntoView(true);", dropdown_button)
+        time.sleep(0.5)
+
+        dropdown_button.click()
+        print("🔽 Dropdown clicked")
+
+        actions = ActionChains(driver)
+
+        # Navigate down a few times to get to '500' (adjust if needed)
+        for _ in range(4):
+            actions.send_keys(Keys.ARROW_DOWN)
+            time.sleep(0.3)
+        actions.send_keys(Keys.ENTER)
+        actions.perform()
+
+        wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
+        print("✅ Selected '500' rows using keyboard")
+    except Exception as e:
+        print(f"💥 Error selecting 500 with keyboard: {e}")
+
+    # Step 7: Scrape the data
+    wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[2]/div[3]/div[2]/div/div/div/div[3]/div/div/div/div[1]/table/tbody")))
+    rows = driver.find_elements(By.XPATH, "/html/body/div[1]/div[2]/div[3]/div[2]/div/div/div/div[3]/div/div/div/div[1]/table/tbody/tr")
+    print(f"📄 Found {len(rows)} rows")
+
+    results = []
+    for idx, row in enumerate(rows, start=1):
+        try:
+            partner_name = row.find_element(By.CLASS_NAME, "sip-table-partnerName").text.strip()
+            model_cell = row.find_element(By.CLASS_NAME, "sip-table-model")
+            model = model_cell.text.strip()
+            model_url = model_cell.find_element(By.TAG_NAME, "a").get_attribute("href") if model_cell.find_elements(By.TAG_NAME, "a") else ""
+            cpu_series = row.find_element(By.CLASS_NAME, "sip-table-cpuSeries").text.strip()
+            supported_releases = row.find_element(By.CLASS_NAME, "sip-table-supportedReleases").text.strip()
+
+            # Visit the Model URL to scrape System Type and Number of Sockets
+            print(f"🔍 [{idx}/{len(rows)}] Scraping details for: {model}")
+            system_type = "N/A"
+            num_sockets = "N/A"
+
+            if model_url:
+                driver.execute_script("window.open(arguments[0]);", model_url)
+                driver.switch_to.window(driver.window_handles[1])
+
+                try:
+                    # Wait for page load
+                    wait.until(EC.presence_of_element_located((By.ID, "search-container")))
+                    time.sleep(2)
+
+                    # Dynamically search for System Type and Number of Sockets
+                    try:
+                        system_type_elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'System Type:')]/following-sibling::div")
+                        if system_type_elements:
+                            system_type = system_type_elements[0].text.strip()
+                    except Exception as e:
+                        print(f"⚠️ Error fetching System Type: {e}")
+
+                    try:
+                        num_sockets_elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'Number of Sockets:')]/following-sibling::div")
+                        if num_sockets_elements:
+                            num_sockets = num_sockets_elements[0].text.strip()
+                    except Exception as e:
+                        print(f"⚠️ Error fetching Number of Sockets: {e}")
+
+                except Exception as detail_err:
+                    print(f"⚠️ Detail scrape error for {model}: {detail_err}")
+
+                finally:
+                    driver.close()
+                    driver.switch_to.window(driver.window_handles[0])
+
+            else:
+                print(f"⚠️ No Model URL for {model}")
+
+            if system_type == "N/A":
+                print("⚠️ System Type not found")
+            if num_sockets == "N/A":
+                print("⚠️ Number of Sockets not found")
+
+            results.append([
+                partner_name, model, model_url, cpu_series,
+                supported_releases, system_type, num_sockets
+            ])
+
+        except Exception as e:
+            print(f"⚠️ Skipping row due to error: {e}")
+
+    # Step 8: Save to CSV
+    with open("vm_server_extended.csv", mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Partner Name", "Model", "Model URL", "CPU Series", "Supported Releases",
+            "System Type", "Number of Sockets"
+        ])
+        writer.writerows(results)
+
+    print("✅ Done! Data saved to 'vm_server_extended.csv' 🎉")
+
+finally:
+    driver.quit()
