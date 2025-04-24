@@ -1,5 +1,6 @@
 import time
 import csv
+import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -11,14 +12,18 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 
-# Setup Chrome WebDriver
-options = Options()
-options.add_argument("--start-maximized")
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-wait = WebDriverWait(driver, 20)
+def create_driver(headless=False):
+    chrome_options = Options()
+    if headless:
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+    else:
+        chrome_options.add_argument("--start-maximized")
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-def safe_click(xpath, max_retries=5, wait_time=2):
-    """Try to click an element, retrying if intercepted"""
+def safe_click(driver, wait, xpath, max_retries=5, wait_time=2):
     for attempt in range(max_retries):
         try:
             element = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
@@ -34,141 +39,135 @@ def safe_click(xpath, max_retries=5, wait_time=2):
             return False
     return False
 
-try:
-    # Step 1: Go to the site
-    driver.get("https://compatibilityguide.broadcom.com/")
-    print("🌐 Opened Broadcom Compatibility Guide")
-
-    # Step 2: Click "Systems / Servers"
-    systems_link = wait.until(EC.element_to_be_clickable((
-        By.XPATH, "//a[contains(@class, 'compGuide-link') and contains(text(), 'Systems / Servers')]"
-    )))
-    driver.execute_script("arguments[0].click();", systems_link)
-    print("✅ Clicked 'Systems / Servers'")
-
-    # Step 3: Wait for Partner Name to appear
-    wait.until(EC.presence_of_element_located((By.XPATH, "//b[contains(text(),'Partner Name')]")))
-    time.sleep(2)
-
-    # Step 4: Check 'Dell'
-    dell_checkbox_xpath = '//*[@id="search-container"]/div[3]/div[2]/div/div/div/div[2]/div/div/div[8]/div[1]/form/div/div[2]/div[25]/div/label/input'
-    dell_checkbox = wait.until(EC.presence_of_element_located((By.XPATH, dell_checkbox_xpath)))
-    driver.execute_script("arguments[0].click();", dell_checkbox)
-    print("✅ Selected 'Dell'")
-
-    # Step 5: Click "View Results"
-    view_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'View Results')]")))
-    view_button.click()
-    print("🔍 Clicked 'View Results'")
-
-    # Step 6: Wait for loader and simulate keyboard nav to select 500
-    try:
-        print("🎮 Using keyboard navigation to select 500 items...")
-
-        # Wait for loader to disappear first!
-        wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
-
-        dropdown_xpath = "//*[@id='results-container']/div[2]/div[1]/button"
-        dropdown_button = wait.until(EC.element_to_be_clickable((By.XPATH, dropdown_xpath)))
-
-        # Scroll into view for safety
-        driver.execute_script("arguments[0].scrollIntoView(true);", dropdown_button)
-        time.sleep(0.5)
-
-        dropdown_button.click()
-        print("🔽 Dropdown clicked")
-
-        actions = ActionChains(driver)
-
-        # Navigate down a few times to get to '500' (adjust if needed)
-        for _ in range(4):
-            actions.send_keys(Keys.ARROW_DOWN)
-            time.sleep(0.3)
-        actions.send_keys(Keys.ENTER)
-        actions.perform()
-
-        wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
-        print("✅ Selected '500' rows using keyboard")
-    except Exception as e:
-        print(f"💥 Error selecting 500 with keyboard: {e}")
-
-    # Step 7: Scrape the data
-    wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[2]/div[3]/div[2]/div/div/div/div[3]/div/div/div/div[1]/table/tbody")))
-    rows = driver.find_elements(By.XPATH, "/html/body/div[1]/div[2]/div[3]/div[2]/div/div/div/div[3]/div/div/div/div[1]/table/tbody/tr")
-    print(f"📄 Found {len(rows)} rows")
-
+# Collect base model data first
+def get_base_data():
+    driver = create_driver(headless=False)
+    wait = WebDriverWait(driver, 20)
     results = []
-    for idx, row in enumerate(rows, start=1):
+
+    try:
+        driver.get("https://compatibilityguide.broadcom.com/")
+        print("🌐 Opened Broadcom Compatibility Guide")
+
+        systems_link = wait.until(EC.element_to_be_clickable((
+            By.XPATH, "//a[contains(@class, 'compGuide-link') and contains(text(), 'Systems / Servers')]"
+        )))
+        driver.execute_script("arguments[0].click();", systems_link)
+        print("✅ Clicked 'Systems / Servers'")
+
+        wait.until(EC.presence_of_element_located((By.XPATH, "//b[contains(text(),'Partner Name')]")))
+        time.sleep(2)
+
+        dell_checkbox_xpath = '//*[@id="search-container"]/div[3]/div[2]/div/div/div/div[2]/div/div/div[8]/div[1]/form/div/div[2]/div[25]/div/label/input'
+        dell_checkbox = wait.until(EC.presence_of_element_located((By.XPATH, dell_checkbox_xpath)))
+        driver.execute_script("arguments[0].click();", dell_checkbox)
+        print("✅ Selected 'Dell'")
+
+        view_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'View Results')]")))
+        view_button.click()
+        print("🔍 Clicked 'View Results'")
+
         try:
-            partner_name = row.find_element(By.CLASS_NAME, "sip-table-partnerName").text.strip()
-            model_cell = row.find_element(By.CLASS_NAME, "sip-table-model")
-            model = model_cell.text.strip()
-            model_url = model_cell.find_element(By.TAG_NAME, "a").get_attribute("href") if model_cell.find_elements(By.TAG_NAME, "a") else ""
-            cpu_series = row.find_element(By.CLASS_NAME, "sip-table-cpuSeries").text.strip()
-            supported_releases = row.find_element(By.CLASS_NAME, "sip-table-supportedReleases").text.strip()
+            wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
 
-            # Visit the Model URL to scrape System Type and Number of Sockets
-            print(f"🔍 [{idx}/{len(rows)}] Scraping details for: {model}")
-            system_type = "N/A"
-            num_sockets = "N/A"
+            dropdown_xpath = "//*[@id='results-container']/div[2]/div[1]/button"
+            dropdown_button = wait.until(EC.element_to_be_clickable((By.XPATH, dropdown_xpath)))
+            driver.execute_script("arguments[0].scrollIntoView(true);", dropdown_button)
+            time.sleep(0.5)
+            dropdown_button.click()
 
-            if model_url:
-                driver.execute_script("window.open(arguments[0]);", model_url)
-                driver.switch_to.window(driver.window_handles[1])
+            actions = ActionChains(driver)
+            for _ in range(4):  # Navigate to '500'
+                actions.send_keys(Keys.ARROW_DOWN)
+                time.sleep(0.3)
+            actions.send_keys(Keys.ENTER)
+            actions.perform()
 
-                try:
-                    # Wait for page load
-                    wait.until(EC.presence_of_element_located((By.ID, "search-container")))
-                    time.sleep(2)
-
-                    # Dynamically search for System Type and Number of Sockets
-                    try:
-                        system_type_elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'System Type:')]/following-sibling::div")
-                        if system_type_elements:
-                            system_type = system_type_elements[0].text.strip()
-                    except Exception as e:
-                        print(f"⚠️ Error fetching System Type: {e}")
-
-                    try:
-                        num_sockets_elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'Number of Sockets:')]/following-sibling::div")
-                        if num_sockets_elements:
-                            num_sockets = num_sockets_elements[0].text.strip()
-                    except Exception as e:
-                        print(f"⚠️ Error fetching Number of Sockets: {e}")
-
-                except Exception as detail_err:
-                    print(f"⚠️ Detail scrape error for {model}: {detail_err}")
-
-                finally:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-
-            else:
-                print(f"⚠️ No Model URL for {model}")
-
-            if system_type == "N/A":
-                print("⚠️ System Type not found")
-            if num_sockets == "N/A":
-                print("⚠️ Number of Sockets not found")
-
-            results.append([
-                partner_name, model, model_url, cpu_series,
-                supported_releases, system_type, num_sockets
-            ])
-
+            wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
+            print("✅ Selected '500' rows")
         except Exception as e:
-            print(f"⚠️ Skipping row due to error: {e}")
+            print(f"💥 Error selecting 500 with keyboard: {e}")
 
-    # Step 8: Save to CSV
-    with open("vm_server_extended.csv", mode="w", newline="", encoding="utf-8") as f:
+        wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody")))
+        rows = driver.find_elements(By.XPATH, "//table/tbody/tr")
+        print(f"📄 Found {len(rows)} rows")
+
+        for row in rows:
+            try:
+                partner_name = row.find_element(By.CLASS_NAME, "sip-table-partnerName").text.strip()
+                model_cell = row.find_element(By.CLASS_NAME, "sip-table-model")
+                model = model_cell.text.strip()
+                model_url = model_cell.find_element(By.TAG_NAME, "a").get_attribute("href") if model_cell.find_elements(By.TAG_NAME, "a") else ""
+                cpu_series = row.find_element(By.CLASS_NAME, "sip-table-cpuSeries").text.strip()
+                supported_releases = row.find_element(By.CLASS_NAME, "sip-table-supportedReleases").text.strip()
+                results.append([partner_name, model, model_url, cpu_series, supported_releases])
+            except Exception as e:
+                print(f"⚠️ Skipping row due to error: {e}")
+    finally:
+        driver.quit()
+
+    return results
+
+# Async headless scraper
+async def scrape_model_details(session_id, model_name, model_url):
+    system_type = "N/A"
+    num_sockets = "N/A"
+
+    try:
+        driver = create_driver(headless=True)
+        wait = WebDriverWait(driver, 15)
+        driver.get(model_url)
+        print(f"🔍 [{session_id}] Scraping details for: {model_name}")
+
+        try:
+            system_type = wait.until(EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="search-container"]/div[2]/div/div/div[2]/div/div[4]/div'))).text.strip()
+        except:
+            print(f"⚠️ System Type not found for {model_name}")
+
+        try:
+            num_sockets = wait.until(EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="search-container"]/div[2]/div/div/div[2]/div/div[5]/div'))).text.strip()
+        except:
+            print(f"⚠️ Number of Sockets not found for {model_name}")
+    except Exception as e:
+        print(f"💥 Error scraping model detail for {model_name}: {e}")
+    finally:
+        driver.quit()
+
+    return (model_url, system_type, num_sockets)
+
+# Batch async runner
+async def batch_scrape_model_details(rows, batch_size=25):
+    all_results = []
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        tasks = [
+            scrape_model_details(i + idx + 1, row[1], row[2])
+            for idx, row in enumerate(batch) if row[2]
+        ]
+        batch_results = await asyncio.gather(*tasks)
+        model_details_map = {url: (stype, nsockets) for url, stype, nsockets in batch_results}
+        for row in batch:
+            url = row[2]
+            stype, nsockets = model_details_map.get(url, ("N/A", "N/A"))
+            all_results.append(row + [stype, nsockets])
+    return all_results
+
+# Save to CSV
+def save_to_csv(results):
+    with open("vm_server_detailed.csv", mode="w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "Partner Name", "Model", "Model URL", "CPU Series", "Supported Releases",
-            "System Type", "Number of Sockets"
-        ])
+        writer.writerow(["Partner Name", "Model", "Model URL", "CPU Series", "Supported Releases", "System Type", "Number of Sockets"])
         writer.writerows(results)
+    print("✅ Saved to 'vm_server_detailed.csv' 🎉")
 
-    print("✅ Done! Data saved to 'vm_server_extended.csv' 🎉")
+# Main
+def main():
+    base_rows = get_base_data()
+    print("⏳ Starting batch detail scraping...")
+    detailed_results = asyncio.run(batch_scrape_model_details(base_rows, batch_size=25))
+    save_to_csv(detailed_results)
 
-finally:
-    driver.quit()
+if __name__ == "__main__":
+    main()
