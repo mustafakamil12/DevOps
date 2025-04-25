@@ -1,120 +1,175 @@
-import os
-import io
 import time
 import csv
-import queue
-import threading
-from datetime import datetime
-from pydub import AudioSegment
-from pydub.utils import make_chunks
-import whisper
-import requests
-import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 
+def create_driver(headless=False):
+    chrome_options = Options()
+    if headless:
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+    else:
+        chrome_options.add_argument("--start-maximized")
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
+def safe_click(driver, wait, xpath, max_retries=5, wait_time=2):
+    for attempt in range(max_retries):
+        try:
+            element = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+            driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            time.sleep(0.5)
+            element.click()
+            return True
+        except ElementClickInterceptedException:
+            print(f"\u23f3 Click intercepted. Retrying ({attempt+1}/{max_retries})...")
+            time.sleep(wait_time)
+        except TimeoutException:
+            print(f"❌ Timeout waiting for element at {xpath}")
+            return False
+    return False
 
+def scrape_model_details_thread(session_id, model_name, model_url):
+    system_type = "N/A"
+    num_sockets = "N/A"
 
-# Silence Whisper's FP16 warning
-warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
-
-# --- Configuration ---
-STREAMS = {
-    "96.7 FM": "https://playerservices.streamtheworld.com/api/livestream-redirect/KTCKAMAAC.aac",
-    "105.3 FM": "https://live.amperwave.net/direct/audacy-krldfmaac-imc"  # Replace with working stream URL
-}
-CHUNK_LENGTH_MS = 30 * 1000
-AD_KEYWORDS = ["sponsored", "call now", "limited time", "offer", "buy", "sale", "promotion", "discount", "visit us", "promo code"]
-LOG_FILE = "radio_ads_log.csv"
-
-# --- Setup Whisper ---
-model = whisper.load_model("base")
-
-# --- Create log file if it doesn’t exist ---
-if not os.path.exists(LOG_FILE):
-    with open(LOG_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Timestamp", "Station", "Transcript"])
-
-# --- Ad detection logic ---
-def detect_ad(text):
-    lower_text = text.lower()
-    return any(keyword in lower_text for keyword in AD_KEYWORDS)
-
-# --- Queue for transcription ---
-audio_queue = queue.Queue()
-
-def transcription_worker():
-    while True:
-        station, audio_chunk, chunk_id = audio_queue.get()
-        if station is None:
-            break
-
-        filename = f"temp_{station.replace(' ', '_')}_{chunk_id}.mp3"
-        audio_chunk.export(filename, format="mp3")
+    try:
+        driver = create_driver(headless=True)
+        wait = WebDriverWait(driver, 15)
+        driver.get(model_url)
+        print(f"🔍 [{session_id}] Scraping details for: {model_name}")
 
         try:
-            result = model.transcribe(filename)
-            transcript = result.get("text", "")
-            if detect_ad(transcript):
-                print(f"📢 Ad detected on {station}: {transcript}")
-                with open(LOG_FILE, "a", newline="") as f:
-                    writer = csv.writer(f)
-                    writer.writerow([datetime.now().isoformat(), station, transcript])
-            else:
-                print(f"✅ No ad on {station} [chunk {chunk_id}]")
-        except Exception as e:
-            print(f"❌ Transcription error on {station} chunk {chunk_id}: {e}")
-        finally:
-            if os.path.exists(filename):
-                os.remove(filename)
-        audio_queue.task_done()
+            system_type = wait.until(EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="search-container"]/div[2]/div/div/div[2]/div/div[4]/div'))).text.strip()
+        except:
+            print(f"⚠️ System Type not found for {model_name}")
 
-# --- Stream handling ---
-def stream_and_process(station, url):
-    print(f"🔊 Listening to {station}...")
-    try:
-        response = requests.get(url, stream=True)
-        audio_data = bytes()
-        chunk_id = 0
+        try:
+            num_sockets = wait.until(EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="search-container"]/div[2]/div/div/div[2]/div/div[5]/div'))).text.strip()
+        except:
+            print(f"⚠️ Number of Sockets not found for {model_name}")
 
-        for block in response.iter_content(1024):
-            audio_data += block
-            if len(audio_data) >= 500_000:
-                print(f"📥 Received {len(audio_data)} bytes from {station}")
-                try:
-                    audio = AudioSegment.from_file(io.BytesIO(audio_data), format="aac")
-                    chunks = make_chunks(audio, CHUNK_LENGTH_MS)
-                    for chunk in chunks:
-                        audio_queue.put((station, chunk, chunk_id))
-                        chunk_id += 1
-                except Exception as e:
-                    print(f"⚠️ Error decoding audio for {station}: {e}")
-                audio_data = bytes()
-
+        driver.quit()
     except Exception as e:
-        print(f"🔌 Error streaming {station}: {e}")
+        print(f"💥 Detail scrape error for {model_name}: {e}")
 
-# --- Main entrypoint ---
+    return (model_url, system_type, num_sockets)
+
+def batch_scrape_model_details_threaded(rows, batch_size=100):
+    all_results = []
+
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        print(f"🚀 Scraping batch {i // batch_size + 1} ({len(batch)} models)...")
+
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            future_to_row = {
+                executor.submit(scrape_model_details_thread, i + idx + 1, row[1], row[2]): row
+                for idx, row in enumerate(batch) if row[2]
+            }
+
+            for future in as_completed(future_to_row):
+                row = future_to_row[future]
+                try:
+                    url, stype, nsockets = future.result()
+                except Exception as e:
+                    print(f"❌ Error scraping {row[1]}: {e}")
+                    url, stype, nsockets = row[2], "N/A", "N/A"
+                all_results.append(row + [stype, nsockets])
+
+    return all_results
+
+def collect_model_rows():
+    driver = create_driver(headless=False)
+    wait = WebDriverWait(driver, 20)
+    results = []
+
+    try:
+        driver.get("https://compatibilityguide.broadcom.com/")
+        print("🌐 Opened Broadcom Compatibility Guide")
+
+        systems_link = wait.until(EC.element_to_be_clickable((
+            By.XPATH, "//a[contains(@class, 'compGuide-link') and contains(text(), 'Systems / Servers')]"
+        )))
+        driver.execute_script("arguments[0].click();", systems_link)
+        print("✅ Clicked 'Systems / Servers'")
+
+        wait.until(EC.presence_of_element_located((By.XPATH, "//b[contains(text(),'Partner Name')]")))
+        time.sleep(2)
+
+        dell_checkbox_xpath = '//*[@id="search-container"]/div[3]/div[2]/div/div/div/div[2]/div/div/div[8]/div[1]/form/div/div[2]/div[25]/div/label/input'
+        dell_checkbox = wait.until(EC.presence_of_element_located((By.XPATH, dell_checkbox_xpath)))
+        driver.execute_script("arguments[0].click();", dell_checkbox)
+        print("✅ Selected 'Dell'")
+
+        view_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'View Results')]")))
+        view_button.click()
+        print("🔍 Clicked 'View Results'")
+
+        wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
+
+        dropdown_xpath = "//*[@id='results-container']/div[2]/div[1]/button"
+        dropdown_button = wait.until(EC.element_to_be_clickable((By.XPATH, dropdown_xpath)))
+        driver.execute_script("arguments[0].scrollIntoView(true);", dropdown_button)
+        time.sleep(0.5)
+
+        dropdown_button.click()
+        print("🕽️ Dropdown clicked")
+
+        actions = ActionChains(driver)
+        for _ in range(4):
+            actions.send_keys(Keys.ARROW_DOWN)
+            time.sleep(0.3)
+        actions.send_keys(Keys.ENTER)
+        actions.perform()
+
+        wait.until(EC.invisibility_of_element_located((By.CLASS_NAME, "global-loader-wrapper")))
+
+        rows = driver.find_elements(By.XPATH, "//table/tbody/tr")
+        print(f"📄 Found {len(rows)} rows")
+
+        for row in rows:
+            try:
+                partner_name = row.find_element(By.CLASS_NAME, "sip-table-partnerName").text.strip()
+                model_cell = row.find_element(By.CLASS_NAME, "sip-table-model")
+                model = model_cell.text.strip()
+                model_url = model_cell.find_element(By.TAG_NAME, "a").get_attribute("href") if model_cell.find_elements(By.TAG_NAME, "a") else ""
+                cpu_series = row.find_element(By.CLASS_NAME, "sip-table-cpuSeries").text.strip()
+                supported_releases = row.find_element(By.CLASS_NAME, "sip-table-supportedReleases").text.strip()
+                results.append([partner_name, model, model_url, cpu_series, supported_releases])
+            except Exception as e:
+                print(f"⚠️ Skipping row due to error: {e}")
+
+    finally:
+        driver.quit()
+
+    return results
+
 def main():
-    # Start transcription worker thread (only one)
-    worker = threading.Thread(target=transcription_worker, daemon=True)
-    worker.start()
+    print("🔄 Gathering model URLs...")
+    rows = collect_model_rows()
 
-    # Start stream threads
-    threads = []
-    for station, url in STREAMS.items():
-        t = threading.Thread(target=stream_and_process, args=(station, url))
-        t.start()
-        threads.append(t)
+    print("⏳ Starting threaded model detail scraping...")
+    detailed_results = batch_scrape_model_details_threaded(rows, batch_size=100)
 
-    for t in threads:
-        t.join()
+    with open("vm_server_detailed.csv", mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Partner Name", "Model", "Model URL", "CPU Series", "Supported Releases", "System Type", "Number of Sockets"])
+        writer.writerows(detailed_results)
 
-    # Stop the transcription worker gracefully
-    audio_queue.put((None, None, None))
-    audio_queue.join()
+    print("✅ Done! Data saved to 'vm_server_detailed.csv' 🎉")
 
 if __name__ == "__main__":
     main()
