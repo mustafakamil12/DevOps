@@ -12,7 +12,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 
-def create_driver(headless=False):
+def create_driver(headless=True):
     chrome_options = Options()
     if headless:
         chrome_options.add_argument("--headless")
@@ -23,31 +23,15 @@ def create_driver(headless=False):
         chrome_options.add_argument("--start-maximized")
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-def safe_click(driver, wait, xpath, max_retries=5, wait_time=2):
-    for attempt in range(max_retries):
-        try:
-            element = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
-            driver.execute_script("arguments[0].scrollIntoView(true);", element)
-            time.sleep(0.5)
-            element.click()
-            return True
-        except ElementClickInterceptedException:
-            print(f"\u23f3 Click intercepted. Retrying ({attempt+1}/{max_retries})...")
-            time.sleep(wait_time)
-        except TimeoutException:
-            print(f"❌ Timeout waiting for element at {xpath}")
-            return False
-    return False
-
-def scrape_model_details_thread(session_id, model_name, model_url):
+def scrape_model_details(model_name, model_url):
     system_type = "N/A"
     num_sockets = "N/A"
 
     try:
-        driver = create_driver(headless=True)
+        driver = create_driver()
         wait = WebDriverWait(driver, 15)
         driver.get(model_url)
-        print(f"🔍 [{session_id}] Scraping details for: {model_name}")
+        print(f"🔍 Scraping details for: {model_name}")
 
         try:
             system_type = wait.until(EC.presence_of_element_located(
@@ -67,27 +51,24 @@ def scrape_model_details_thread(session_id, model_name, model_url):
 
     return (model_url, system_type, num_sockets)
 
-def batch_scrape_model_details_threaded(rows, batch_size=100):
+def batch_scrape_model_details(rows, batch_size=10):
     all_results = []
+    print("⏳ Scraping model detail pages with threads...")
 
-    for i in range(0, len(rows), batch_size):
-        batch = rows[i:i + batch_size]
-        print(f"🚀 Scraping batch {i // batch_size + 1} ({len(batch)} models)...")
+    with ThreadPoolExecutor(max_workers=batch_size) as executor:
+        future_to_row = {
+            executor.submit(scrape_model_details, row[1], row[2]): row for row in rows if row[2]
+        }
 
-        with ThreadPoolExecutor(max_workers=batch_size) as executor:
-            future_to_row = {
-                executor.submit(scrape_model_details_thread, i + idx + 1, row[1], row[2]): row
-                for idx, row in enumerate(batch) if row[2]
-            }
-
-            for future in as_completed(future_to_row):
-                row = future_to_row[future]
-                try:
-                    url, stype, nsockets = future.result()
-                except Exception as e:
-                    print(f"❌ Error scraping {row[1]}: {e}")
-                    url, stype, nsockets = row[2], "N/A", "N/A"
-                all_results.append(row + [stype, nsockets])
+        for future in as_completed(future_to_row):
+            row = future_to_row[future]
+            try:
+                model_url, stype, nsockets = future.result()
+            except Exception as exc:
+                print(f"❌ Thread failed: {exc}")
+                stype, nsockets = "N/A", "N/A"
+                model_url = row[2]
+            all_results.append(row + [stype, nsockets])
 
     return all_results
 
@@ -126,10 +107,10 @@ def collect_model_rows():
         time.sleep(0.5)
 
         dropdown_button.click()
-        print("🕽️ Dropdown clicked")
+        print("🔽 Dropdown clicked")
 
         actions = ActionChains(driver)
-        for _ in range(4):
+        for _ in range(4):  # Navigate to '500'
             actions.send_keys(Keys.ARROW_DOWN)
             time.sleep(0.3)
         actions.send_keys(Keys.ENTER)
@@ -151,7 +132,6 @@ def collect_model_rows():
                 results.append([partner_name, model, model_url, cpu_series, supported_releases])
             except Exception as e:
                 print(f"⚠️ Skipping row due to error: {e}")
-
     finally:
         driver.quit()
 
@@ -162,7 +142,7 @@ def main():
     rows = collect_model_rows()
 
     print("⏳ Starting threaded model detail scraping...")
-    detailed_results = batch_scrape_model_details_threaded(rows, batch_size=100)
+    detailed_results = batch_scrape_model_details(rows, batch_size=10)
 
     with open("vm_server_detailed.csv", mode="w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
