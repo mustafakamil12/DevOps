@@ -1,22 +1,16 @@
-import pandas as pd
-from tabulate import tabulate
+# Define a function to clean the 'Supported Releases' column
+def clean_supported_releases(text):
+    if pd.isna(text):
+        return None
 
-def compare_csvs(file1, file2, key_column):
-    df1 = pd.read_csv(file1).set_index(key_column)
-    df2 = pd.read_csv(file2).set_index(key_column)
+    # Remove '+' and extra whitespace
+    text = text.replace('+', '').strip()
 
-    # Align columns and rows
-    df1, df2 = df1.align(df2, join='outer', axis=1)
-    df1 = df1.fillna("⛔ MISSING")
-    df2 = df2.fillna("⛔ MISSING")
+    # Use regex to split at positions where a new ESXi version begins
+    parts = re.findall(r'(ESXi\s*\d+\.\d+\s*(?:U\d+)?)', text)
 
-    # Find differences
-    diff_mask = df1 != df2
-    diffs = df1[diff_mask].stack().reset_index()
-    diffs.columns = [key_column, "Column", "File1 Value"]
-    diffs["File2 Value"] = df2[diff_mask].stack().values
+    # Join the parts with ' | '
+    return ' | '.join(parts)
 
-    print(tabulate(diffs, headers="keys", tablefmt="grid"))
-
-# Example usage:
-compare_csvs("file1.csv", "file2.csv", key_column="id")
+# Apply the cleaning function to the column
+df['Supported Releases'] = df['Supported Releases'].apply(clean_supported_releases)
