@@ -18,3 +18,18 @@
             print(f"output[0]: {output[0]}")
             self.conn.commit()
             return output[0]
+
+        elif result_type == 'output':
+            print('Output')
+            cursor = self.conn.cursor()
+            cursor.execute(spName, params)
+
+            # Skip any non-result sets (like INSERT)
+            while cursor.nextset():
+                if cursor.description:
+                    break
+
+            output = cursor.fetchone()
+            print(f"output.rawAdID: {output.rawAdID}")
+            self.conn.commit()
+            return output.rawAdID
