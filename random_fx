@@ -1,16 +1,20 @@
-# Define a function to clean the 'Supported Releases' column
-def clean_supported_releases(text):
-    if pd.isna(text):
-        return None
+    def exe_proc(self, spName, params=(),result_type=''):
+        if result_type == '':
+            print('No result')
+            cursor = self.conn.cursor()
+            cursor.execute(spName, params)
+            self.conn.commit()
+        elif result_type == 'result':
+            print('Result')
+            cursor = self.conn.cursor()
+            cursor.execute(spName, params)
 
-    # Remove '+' and extra whitespace
-    text = text.replace('+', '').strip()
+            # Skip any non-result sets (like INSERT)
+            while cursor.nextset():
+                if cursor.description:
+                    break
 
-    # Use regex to split at positions where a new ESXi version begins
-    parts = re.findall(r'(ESXi\s*\d+\.\d+\s*(?:U\d+)?)', text)
-
-    # Join the parts with ' | '
-    return ' | '.join(parts)
-
-# Apply the cleaning function to the column
-df['Supported Releases'] = df['Supported Releases'].apply(clean_supported_releases)
+            output = cursor.fetchone()
+            print(f"output[0]: {output[0]}")
+            self.conn.commit()
+            return output[0]
