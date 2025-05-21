@@ -1,0 +1,12 @@
+# Set environment variables (optional)
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV LANG=en_US.UTF-8
+
+# Register required repos and install utilities
+RUN subscription-manager repos \
+        --enable=rhel-8-for-x86_64-baseos-rpms \
+        --enable=rhel-8-for-x86_64-appstream-rpms && \
+    dnf install -y dnf-plugins-core dnf-utils && \
+    dnf update -y && \
+    dnf clean all
