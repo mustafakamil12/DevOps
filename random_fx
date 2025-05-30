@@ -1,6 +1,26 @@
-RUN dnf install -y subscription-manager && \
-    subscription-manager repos \
-        --enable=rhel-8-for-x86_64-baseos-rpms \
-        --enable=rhel-8-for-x86_64-appstream-rpms && \
-    dnf install -y dnf-utils dnf-plugins-core && \
-    dnf clean all
+[supervisord]
+nodaemon=true
+user=root
+
+[unix_http_server]
+file=/tmp/supervisor.sock
+
+[supervisorctl]
+serverurl=unix:///tmp/supervisor.sock
+
+[program:flask_app]
+directory=/app
+command=python3 /app/app.py
+autostart=true
+autorestart=true
+startsecs=5
+stdout_logfile=/dev/stdout
+
+
+[program:radio_listener]
+directory=/app
+command=python3 /app/radio_listener.py
+autostart=true
+autorestart=true
+startsecs=10
+stdout_logfile=/dev/stdout
