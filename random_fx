@@ -24,3 +24,6 @@ autostart=true
 autorestart=true
 startsecs=10
 stdout_logfile=/dev/stdout
+
+# Replace the placeholder with the environment variable
+RUN envsubst '${APP_USER}' < /etc/supervisor/conf.d/supervisord.conf.template > /etc/supervisor/conf.d/supervisord.conf
