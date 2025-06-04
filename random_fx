@@ -1,31 +1,4 @@
-[supervisord]
-nodaemon=true
-user=root
-
-[unix_http_server]
-file=/tmp/supervisor.sock
-
-[supervisorctl]
-serverurl=unix:///tmp/supervisor.sock
-
-[program:flask_app]
-directory=/app
-command=python3 /app/app.py
-autostart=true
-autorestart=true
-startsecs=5
-stdout_logfile=/dev/stdout
-
-
-[program:radio_listener]
-directory=/app
-command=python3 /app/radio_listener.py
-autostart=true
-autorestart=true
-startsecs=10
-stdout_logfile=/dev/stdout
-
-COPY supervisord.conf.template /etc/supervisor/conf.d/supervisord.conf.template
-
-# Replace the placeholder with the environment variable
-RUN envsubst '${APP_USER}' < /etc/supervisor/conf.d/supervisord.conf.template > /etc/supervisor/conf.d/supervisord.conf
+# Set locale to en_US.UTF-8
+RUN dnf install -y glibc-langpack-en && \
+    localedef -i en_US -f UTF-8 en_US.UTF-8 && \
+    echo "LANG=en_US.UTF-8" > /etc/locale.conf
