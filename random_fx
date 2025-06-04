@@ -9,12 +9,19 @@ RUN apt-get update && apt-get install -y \
     libxrandr-dev \
     libgtk-3-dev \
     libgbm-dev \
+    glibc-common \
     glibc-langpack-en \
     locales
 
-# Set up locale to en_US.UTF-8
+# Generate and set up locale en_US.UTF-8
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
+
+# Set locale environment variables
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
+
+# Set system-wide locale configuration
+RUN echo "LANG=en_US.UTF-8" > /etc/locale.conf && \
+    localectl set-locale LANG=en_US.UTF-8
 
 # Your other commands go here...
