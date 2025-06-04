@@ -2,3 +2,17 @@
 RUN dnf install -y glibc-langpack-en && \
     localedef -i en_US -f UTF-8 en_US.UTF-8 && \
     echo "LANG=en_US.UTF-8" > /etc/locale.conf
+
+
+# Install Google Chrome (matching version for ChromeDriver 135)
+RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm -O google-chrome.rpm && \
+    dpkg -i google-chrome-stable_current_x86_64.rpm || apt-get -fy install && \
+    rm google-chrome-stable_current_x86_64.rpm
+
+# Verify Chrome installation
+RUN google-chrome-stable --version
+
+# Install ChromeDriver 135
+RUN wget https://chromedriver.storage.googleapis.com/135.0.0.0/chromedriver_linux64.zip -O /tmp/chromedriver_linux64.zip && \
+    unzip /tmp/chromedriver_linux64.zip -d /usr/local/bin && \
+    rm /tmp/chromedriver_linux64.zip
