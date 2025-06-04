@@ -1,18 +1,20 @@
-# Set locale to en_US.UTF-8
-RUN dnf install -y glibc-langpack-en && \
-    localedef -i en_US -f UTF-8 en_US.UTF-8 && \
-    echo "LANG=en_US.UTF-8" > /etc/locale.conf
+# Start with a Python image (or any other base image)
+FROM python:3.8-slim
 
+# Install necessary dependencies for locales and other tools
+RUN apt-get update && apt-get install -y \
+    wget \
+    libx11-dev \
+    libxcomposite-dev \
+    libxrandr-dev \
+    libgtk-3-dev \
+    libgbm-dev \
+    glibc-langpack-en \
+    locales
 
-# Install Google Chrome (matching version for ChromeDriver 135)
-RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm -O google-chrome.rpm && \
-    dpkg -i google-chrome-stable_current_x86_64.rpm || apt-get -fy install && \
-    rm google-chrome-stable_current_x86_64.rpm
+# Set up locale to en_US.UTF-8
+RUN localedef -i en_US -f UTF-8 en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
-# Verify Chrome installation
-RUN google-chrome-stable --version
-
-# Install ChromeDriver 135
-RUN wget https://chromedriver.storage.googleapis.com/135.0.0.0/chromedriver_linux64.zip -O /tmp/chromedriver_linux64.zip && \
-    unzip /tmp/chromedriver_linux64.zip -d /usr/local/bin && \
-    rm /tmp/chromedriver_linux64.zip
+# Your other commands go here...
