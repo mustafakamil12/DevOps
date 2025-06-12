@@ -1,11 +1,15 @@
+mkdir -p /tmp/chrome-crashpad
 ./google/chrome/opt/google/chrome/google-chrome \
   --no-sandbox \
   --disable-gpu \
   --disable-software-rasterizer \
-  --headless \
   --disable-dev-shm-usage \
   --noerrdialogs \
   --disable-crash-reporter \
   --disable-crashpad \
+  --crashpad-handler-pid=0 \
+  --enable-crash-reporter=false \
+  --user-data-dir=/tmp/chrome-user-data \
   --remote-debugging-port=9222 \
+  --headless \
   https://www.google.com/
