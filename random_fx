@@ -1,24 +1,9 @@
-import logging
-
-# Set up root logger format and default level
-logging.basicConfig(level=logging.INFO, format="%(name)s - %(levelname)s - %(message)s")
-
-# Define custom logic for logger levels
-def configure_loggers():
-    for name, logger in logging.root.manager.loggerDict.items():
-        if isinstance(logger, logging.PlaceHolder):  # skip placeholders
-            continue
-
-        # You can print them first if you want to explore
-        print(f"Found logger: {name}")
-
-        if name == "selenium.webdriver.remote.remote_connection":
-            logger.setLevel(logging.CRITICAL)
-        elif name == "":
-            # The root logger
-            logging.getLogger().setLevel(logging.INFO)
-        else:
-            logger.setLevel(logging.WARNING)  # Default for others
-
-# Call the config
-configure_loggers()
+./google/chrome/opt/google/chrome/google-chrome \
+  --no-sandbox \
+  --disable-gpu \
+  --disable-software-rasterizer \
+  --headless \
+  --noerrdialogs \
+  --disable-crash-reporter \
+  --remote-debugging-port=9222 \
+  https://example.com
