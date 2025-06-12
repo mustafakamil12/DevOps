@@ -3,7 +3,9 @@
   --disable-gpu \
   --disable-software-rasterizer \
   --headless \
+  --disable-dev-shm-usage \
   --noerrdialogs \
   --disable-crash-reporter \
+  --disable-crashpad \
   --remote-debugging-port=9222 \
-  https://example.com
+  https://www.google.com/
