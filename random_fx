@@ -113,3 +113,24 @@ def nsx_mgr_qa_threaded(mgr_pd_df: pd.DataFrame) -> pd.DataFrame:
                 df.at[row_index, k] = v
 
     return df
+
+# ============
+# time wraper
+
+import time
+from functools import wraps
+
+def benchmark(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        mode = kwargs.get("mode", "unknown").upper()
+        print(f"\n🚀 Starting nsx_mgr_qa in {mode} mode...")
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        end = time.perf_counter()
+        print(f"✅ Completed in {end - start:.2f} seconds.")
+        return result
+    return wrapper
+
+
+===============
