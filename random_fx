@@ -1,16 +1,115 @@
-# Start from a base image (use your preferred one)
-FROM registry.access.redhat.com/ubi8/python-39
+# Asyncio Version
+import asyncio
+from datetime import datetime, timezone
+from typing import Dict, Any
+import pandas as pd
 
-# Install unzip, curl, tar, and any needed Python packages
-RUN dnf install -y curl tar && \
-    dnf clean all
+async def process_qa(node: str, mgr_node_uuid: str, qa_name: str) -> Dict[str, Any]:
+    path = s.get_api_path(qa_name)
+    if not path:
+        return {}
 
-# Download chromedriver .tgz from Artifactory
-ADD https://www.artifactrepository.citigroup.net:443/artifactory/npm-3rdparty-local/chromedriver/-/chromedriver-133.0.3.tgz /tmp/chromedriver.tgz
+    if "{node_uuid}" in path:
+        path = path.format(node_uuid=mgr_node_uuid)
 
-# Extract and move chromedriver to /usr/local/bin
-RUN mkdir -p /tmp/chromedriver-extract && \
-    tar -xzf /tmp/chromedriver.tgz -C /tmp/chromedriver-extract --strip-components=1 && \
-    mv /tmp/chromedriver-extract/chromedriver /usr/local/bin/chromedriver && \
-    chmod +x /usr/local/bin/chromedriver && \
-    rm -rf /tmp/chromedriver*
+    mgr_configs = await asyncio.to_thread(s.NsxManagerConfigs, vip=node, api_path=path)
+    check_conf = getattr(mgr_configs, qa_name)
+    return await asyncio.to_thread(check_conf)
+
+async def process_node(node: str, df: pd.DataFrame, qa_list: list[str]) -> Dict[str, Any]:
+    TIME_STAMP = datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
+    row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
+    mgr_node_uuid = df.loc[row_index, "manager_uuid"]
+
+    results = {"row_index": row_index, "time_stamp": TIME_STAMP}
+    qa_tasks = [
+        process_qa(node, mgr_node_uuid, qa_name)
+        for qa_name in qa_list
+    ]
+    qa_results = await asyncio.gather(*qa_tasks)
+
+    for qa_dict in qa_results:
+        for k, v in qa_dict.items():
+            results[k] = v
+    return results
+
+async def nsx_mgr_qa_async(mgr_pd_df: pd.DataFrame) -> pd.DataFrame:
+    df = mgr_pd_df.copy()
+
+    if "time_stamp" not in df.columns:
+        df["time_stamp"] = ""
+    col = df.pop("time_stamp")
+    df.insert(0, "time_stamp", col)
+
+    mgr_list = df["manager_fqdn"].to_list()
+    mgr_qa_list = ["get_mgr_motd", "get_mgr_dns", "get_mgr_ntp", "get_mgr_syslog", "get_mgr_tls",
+                   "get_mgr_forwarding_mode", "get_mgr_search_domain", "get_mgr_backup", "get_mgr_users"]
+
+    all_node_tasks = [process_node(node, df, mgr_qa_list) for node in mgr_list]
+    all_results = await asyncio.gather(*all_node_tasks)
+
+    # Write results back to df
+    for result in all_results:
+        row_index = result.pop("row_index")
+        df.at[row_index, "time_stamp"] = result.pop("time_stamp")
+        for k, v in result.items():
+            if k not in df.columns:
+                df[k] = ""
+            df.at[row_index, k] = v
+
+    return df
+# ============================
+
+# Multithreading version
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+import pandas as pd
+
+def process_node_threaded(node: str, df: pd.DataFrame, qa_list: list[str]) -> dict:
+    TIME_STAMP = datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
+    row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
+    mgr_node_uuid = df.loc[row_index, "manager_uuid"]
+
+    result = {"row_index": row_index, "time_stamp": TIME_STAMP}
+    for qa_name in qa_list:
+        path = s.get_api_path(qa_name)
+        if not path:
+            continue
+        if "{node_uuid}" in path:
+            path = path.format(node_uuid=mgr_node_uuid)
+
+        mgr_configs = s.NsxManagerConfigs(vip=node, api_path=path)
+        check_conf = getattr(mgr_configs, qa_name)
+        qa_data = check_conf()
+        result.update(qa_data)
+    return result
+
+def nsx_mgr_qa_threaded(mgr_pd_df: pd.DataFrame) -> pd.DataFrame:
+    df = mgr_pd_df.copy()
+
+    if "time_stamp" not in df.columns:
+        df["time_stamp"] = ""
+    col = df.pop("time_stamp")
+    df.insert(0, "time_stamp", col)
+
+    mgr_list = df["manager_fqdn"].to_list()
+    mgr_qa_list = ["get_mgr_motd", "get_mgr_dns", "get_mgr_ntp", "get_mgr_syslog", "get_mgr_tls",
+                   "get_mgr_forwarding_mode", "get_mgr_search_domain", "get_mgr_backup", "get_mgr_users"]
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_node = {
+            executor.submit(process_node_threaded, node, df, mgr_qa_list): node
+            for node in mgr_list
+        }
+
+        for future in as_completed(future_to_node):
+            result = future.result()
+            row_index = result.pop("row_index")
+            df.at[row_index, "time_stamp"] = result.pop("time_stamp")
+            for k, v in result.items():
+                if k not in df.columns:
+                    df[k] = ""
+                df.at[row_index, k] = v
+
+    return df
