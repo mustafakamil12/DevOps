@@ -133,4 +133,116 @@ def benchmark(func):
     return wrapper
 
 
-===============
+# ===============
+# Combined versions
+
+import pandas as pd
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional, Literal
+import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Dummy import placeholder (replace with actual logic)
+# import s
+
+QA_LIST = [
+    "get_mgr_motd", "get_mgr_dns", "get_mgr_ntp", "get_mgr_syslog", "get_mgr_tls",
+    "get_mgr_forwarding_mode", "get_mgr_search_domain", "get_mgr_backup", "get_mgr_users"
+]
+
+# --- Shared Utilities ---
+def get_time_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
+
+# --- Threaded Logic ---
+def process_node_threaded(node: str, df: pd.DataFrame) -> dict:
+    row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
+    uuid = df.loc[row_index, "manager_uuid"]
+    result = {"row_index": row_index, "time_stamp": get_time_stamp()}
+
+    for qa in QA_LIST:
+        path = s.get_api_path(qa)
+        if not path:
+            continue
+        path = path.format(node_uuid=uuid) if "{node_uuid}" in path else path
+        mgr_configs = s.NsxManagerConfigs(vip=node, api_path=path)
+        result.update(getattr(mgr_configs, qa)())
+    return result
+
+# --- Async Logic ---
+async def process_qa_async(node: str, uuid: str, qa: str) -> dict:
+    path = s.get_api_path(qa)
+    if not path:
+        return {}
+    path = path.format(node_uuid=uuid) if "{node_uuid}" in path else path
+    mgr_configs = await asyncio.to_thread(s.NsxManagerConfigs, vip=node, api_path=path)
+    check_conf = getattr(mgr_configs, qa)
+    return await asyncio.to_thread(check_conf)
+
+async def process_node_async(node: str, df: pd.DataFrame) -> dict:
+    row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
+    uuid = df.loc[row_index, "manager_uuid"]
+    tasks = [process_qa_async(node, uuid, qa) for qa in QA_LIST]
+    results = await asyncio.gather(*tasks)
+    output = {"row_index": row_index, "time_stamp": get_time_stamp()}
+    for qa_dict in results:
+        output.update(qa_dict)
+    return output
+
+# --- Master Wrapper ---
+def nsx_mgr_qa(df: pd.DataFrame, mode: Literal["sync", "threaded", "async"] = "sync") -> pd.DataFrame:
+    df = df.copy()
+    if "time_stamp" not in df.columns:
+        df["time_stamp"] = ""
+    df.insert(0, "time_stamp", df.pop("time_stamp"))
+
+    mgr_list = df["manager_fqdn"].tolist()
+
+    if mode == "sync":
+        for node in mgr_list:
+            row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
+            uuid = df.loc[row_index, "manager_uuid"]
+            df.at[row_index, "time_stamp"] = get_time_stamp()
+            for qa in QA_LIST:
+                path = s.get_api_path(qa)
+                if not path:
+                    continue
+                path = path.format(node_uuid=uuid) if "{node_uuid}" in path else path
+                mgr_configs = s.NsxManagerConfigs(vip=node, api_path=path)
+                result = getattr(mgr_configs, qa)()
+                for k, v in result.items():
+                    if k not in df.columns:
+                        df[k] = ""
+                    df.at[row_index, k] = v
+        return df
+
+    elif mode == "threaded":
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(process_node_threaded, node, df) for node in mgr_list]
+            for future in as_completed(futures):
+                result = future.result()
+                row = result.pop("row_index")
+                df.at[row, "time_stamp"] = result.pop("time_stamp")
+                for k, v in result.items():
+                    if k not in df.columns:
+                        df[k] = ""
+                    df.at[row, k] = v
+        return df
+
+    elif mode == "async":
+        async def run_all():
+            tasks = [process_node_async(node, df) for node in mgr_list]
+            results = await asyncio.gather(*tasks)
+            for result in results:
+                row = result.pop("row_index")
+                df.at[row, "time_stamp"] = result.pop("time_stamp")
+                for k, v in result.items():
+                    if k not in df.columns:
+                        df[k] = ""
+                    df.at[row, k] = v
+            return df
+        return asyncio.run(run_all())
+
+    else:
+        raise ValueError(f"Unsupported mode: {mode}")
+
