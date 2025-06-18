@@ -246,3 +246,22 @@ def nsx_mgr_qa(df: pd.DataFrame, mode: Literal["sync", "threaded", "async"] = "s
     else:
         raise ValueError(f"Unsupported mode: {mode}")
 
+#====================================================
+
+🎯 Kerberos Role in Your App
+🔐 Auth Mechanism for Module A
+Kerberos is used to authenticate Module A to SQL Server without using a username/password — it uses a ticket instead.
+
+🎟️ Issues a Ticket (TGT)
+Kerberos authenticates the service account (e.g., via kinit) and provides a Ticket Granting Ticket (TGT).
+
+📜 Provides Session Credentials
+That TGT is used to get a service ticket for MSSQL (MSSQLSvc/hostname:port) so Module A can connect securely.
+
+🛡️ Enables Integrated Security
+SQL Server checks the Kerberos ticket and allows access only if valid — no need to store SQL passwords.
+
+🎭 Keytab Automation (optional)
+In containers, Kerberos can use a keytab file to auto-login the service account instead of prompting for passwords.
+
+
