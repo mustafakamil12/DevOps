@@ -264,4 +264,28 @@ SQL Server checks the Kerberos ticket and allows access only if valid — no nee
 🎭 Keytab Automation (optional)
 In containers, Kerberos can use a keytab file to auto-login the service account instead of prompting for passwords.
 
+#====================================================
+bash script to use kinit
+
+#!/bin/bash
+
+# Expecting KERB_USER to be set as env variable
+if [ -z "$KERB_USER" ]; then
+  echo "❌ KERB_USER environment variable not set."
+  exit 1
+fi
+
+echo "🔐 Please enter the password for $KERB_USER:"
+kinit "$KERB_USER"
+
+if [ $? -ne 0 ]; then
+  echo "❌ Kerberos login failed. Exiting."
+  exit 1
+fi
+
+echo "✅ Kerberos login successful."
+
+# Now launch your Python app
+python3 /app/my_app.py
+
 
