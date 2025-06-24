@@ -269,23 +269,24 @@ bash script to use kinit
 
 #!/bin/bash
 
-# Expecting KERB_USER to be set as env variable
-if [ -z "$KERB_USER" ]; then
-  echo "❌ KERB_USER environment variable not set."
+if [ -z "$KERB_USER" ] || [ -z "$KERB_PASS" ]; then
+  echo "❌ Missing KERB_USER or KERB_PASS environment variable"
   exit 1
 fi
 
-echo "🔐 Please enter the password for $KERB_USER:"
-kinit "$KERB_USER"
+echo "🔐 Performing kinit for $KERB_USER..."
+
+# Feed password to kinit
+echo "$KERB_PASS" | kinit "$KERB_USER"
 
 if [ $? -ne 0 ]; then
-  echo "❌ Kerberos login failed. Exiting."
+  echo "❌ Kerberos login failed."
   exit 1
 fi
 
 echo "✅ Kerberos login successful."
 
-# Now launch your Python app
 python3 /app/my_app.py
+
 
 
