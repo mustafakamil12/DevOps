@@ -269,14 +269,17 @@ bash script to use kinit
 
 #!/bin/bash
 
-if [ -z "$KERB_USER" ] || [ -z "$KERB_PASS" ]; then
-  echo "❌ Missing KERB_USER or KERB_PASS environment variable"
-  exit 1
-fi
+# Parse the YAML file using Python and export env vars
+eval $(python3 <<EOF
+import yaml
+data = yaml.safe_load(open('/app/secrets.yaml'))
+print(f"export KERB_USER='{data['kerberos']['user']}'")
+print(f"export KERB_PASS='{data['kerberos']['pass']}'")
+EOF
+)
 
-echo "🔐 Performing kinit for $KERB_USER..."
-
-# Feed password to kinit
+# Proceed with Kerberos login
+echo "🔐 Running kinit for $KERB_USER..."
 echo "$KERB_PASS" | kinit "$KERB_USER"
 
 if [ $? -ne 0 ]; then
@@ -287,6 +290,3 @@ fi
 echo "✅ Kerberos login successful."
 
 python3 /app/my_app.py
-
-
-
