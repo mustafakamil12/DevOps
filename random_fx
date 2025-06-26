@@ -290,3 +290,67 @@ fi
 echo "✅ Kerberos login successful."
 
 python3 /app/my_app.py
+
+#=====================================================
+
+nsxmgrinventory.py
+
+import pandas as pd
+import sdmodule as s  # Custom module, assumed to be available in your project
+import time
+import asyncio
+from typing import List
+
+# Async wrapper to process a single VIP
+async def process_vip(vip: str, api_path: str, semaphore: asyncio.Semaphore) -> pd.DataFrame:
+    async with semaphore:
+        columns = ["region", "dc", "environment", "vsi_vdi", "vip", "cluster_uuid", "manager_uuid", "manager_fqdn"]
+        df = pd.DataFrame(columns=columns)
+
+        try:
+            print(f"🔄 Processing VIP: {vip}")
+            api = s.NsxManagerConfigs(vip=vip, api_path=api_path)
+            mgrs_configs = await asyncio.to_thread(api.get_mgrs_configs)  # Run sync I/O in thread
+
+            for mgr, config in mgrs_configs.items():
+                df.loc[len(df)] = {
+                    "region": api.reg,
+                    "dc": api.dc,
+                    "environment": api.env,
+                    "vsi_vdi": api.vsi_vdi,
+                    "vip": vip,
+                    "cluster_uuid": config["cluster_uuid"],
+                    "manager_uuid": config["manager_uuid"],
+                    "manager_fqdn": mgr
+                }
+        except Exception as e:
+            print(f"❌ Error processing {vip}: {e}")
+        return df
+
+# Main async function to gather all VIP results
+async def nsx_mgr_inv_async(vip_list: List[str]) -> pd.DataFrame:
+    api_path = s.get_api_path("get_mgr_cluster")
+    print(f"📡 Using API Path: {api_path}")
+    semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent VIPs
+    tasks = [process_vip(vip, api_path, semaphore) for vip in vip_list]
+    results = await asyncio.gather(*tasks)
+    return pd.concat(results, ignore_index=True)
+
+# Sync entry point
+def main():
+    start = time.time()
+    print(f"🚀 Starting collection...")
+
+    LOAD_FILE = "./database/vips_list.csv"
+    SAVE_FILE = "F:/database/nsxmgrs/nsxmgr_inventory.csv"
+    initial_df = pd.read_csv(LOAD_FILE)
+    vips = initial_df["vip"].str.lower().drop_duplicates().to_list()
+
+    final_df = asyncio.run(nsx_mgr_inv_async(vips))
+    final_df.to_csv(SAVE_FILE, index=False)
+
+    print(f"✅ Done! Saved to: {SAVE_FILE}")
+    print(f"⏱️ Time elapsed: {time.time() - start:.2f} seconds")
+
+if __name__ == "__main__":
+    main()
