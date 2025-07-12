@@ -354,3 +354,22 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+===================
+
+ # Try to expand + button if it exists
+        try:
+            plus_button = supported_releases_cell.find_element(By.TAG_NAME, "button")
+            plus_button.click()
+            # Wait briefly for the extra items to load (can be refined)
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".sip-table-supportedReleases a"))
+            )
+        except Exception:
+            # No + button? Then it's already expanded
+            pass
+
+        # Now grab all <a> tags inside the cell
+        release_links = supported_releases_cell.find_elements(By.TAG_NAME, "a")
+        supported_releases = [a.text.strip() for a in release_links]
