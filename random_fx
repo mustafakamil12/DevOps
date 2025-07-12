@@ -373,3 +373,26 @@ if __name__ == "__main__":
         # Now grab all <a> tags inside the cell
         release_links = supported_releases_cell.find_elements(By.TAG_NAME, "a")
         supported_releases = [a.text.strip() for a in release_links]
+
+======================
+
+wait.until(EC.presence_of_element_located((By.XPATH, "//b[contains(text(), 'Partner Name')]")))
+logging.debug("✅ Partner Name filter section loaded")
+
+vendors_to_select = ["Dell", "HP"]
+
+vendor_labels = driver.find_elements(By.CSS_SELECTOR, "label")
+
+for label in vendor_labels:
+    try:
+        text_element = label.find_element(By.CLASS_NAME, "custom-control-label-text")
+        vendor_name = text_element.text.strip()
+
+        if vendor_name in vendors_to_select:
+            checkbox = label.find_element(By.TAG_NAME, "input")
+            if not checkbox.is_selected():
+                driver.execute_script("arguments[0].click();", checkbox)
+                logging.debug(f"✅ Selected '{vendor_name}'")
+    except Exception as e:
+        logging.debug(f"⚠️ Skipping label due to error: {e}")
+
