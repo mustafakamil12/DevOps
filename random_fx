@@ -396,3 +396,53 @@ for label in vendor_labels:
     except Exception as e:
         logging.debug(f"⚠️ Skipping label due to error: {e}")
 
+========================
+
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import smtplib
+
+def build_html_email(data_dict):
+    html = """
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; }
+          .section { margin-bottom: 30px; }
+          .title { font-size: 18px; font-weight: bold; color: #333; border-bottom: 2px solid #ccc; padding-bottom: 5px; margin-bottom: 10px; }
+          .item { padding: 5px 0; border-bottom: 1px dashed #ddd; }
+        </style>
+      </head>
+      <body>
+    """
+
+    for key, values in data_dict.items():
+        html += f'<div class="section">'
+        html += f'<div class="title">{key}</div>'
+        for item in values:
+            html += f'<div class="item">{item}</div>'
+        html += '</div>'
+
+    html += "</body></html>"
+    return html
+
+# Example usage
+html_content = build_html_email(data)
+
+# Optional: send email (adjust SMTP, sender/recipient info)
+def send_fancy_email(subject, html_content, sender, recipient, smtp_host='smtp.example.com', smtp_port=587, password='your-password'):
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = sender
+    msg['To'] = recipient
+
+    msg.attach(MIMEText(html_content, 'html'))
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(sender, password)
+        server.sendmail(sender, recipient, msg.as_string())
+        print("✅ Email sent!")
+
+# Uncomment to send (after filling details)
+# send_fancy_email("My Fancy List", html_content, "you@example.com", "friend@example.com")
