@@ -446,3 +446,165 @@ def send_fancy_email(subject, html_content, sender, recipient, smtp_host='smtp.e
 
 # Uncomment to send (after filling details)
 # send_fancy_email("My Fancy List", html_content, "you@example.com", "friend@example.com")
+
+=================================================
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+import pandas as pd
+
+# Assuming your sdnmodule is imported as "s"
+# import sdnmodule as s
+
+# ---------- CONFIG ----------
+MAX_WORKERS = 10          # how many threads (I/O concurrency)
+QA_CONCURRENCY = 5        # per-manager throttling (avoid hammering an endpoint)
+# ----------------------------
+
+def _get_row_index(df, node):
+    # FIX: df.index(...) is not valid; use boolean mask:
+    idx_list = df.index[df["manager_fqdn"] == node].tolist()
+    if not idx_list:
+        raise ValueError(f"Manager {node} not found in dataframe.")
+    return idx_list[0]
+
+def _ensure_timestamp_col(df):
+    if "time_stamp" not in df.columns:
+        df.insert(0, "time_stamp", "")
+
+def _get_mgr_qa_list():
+    # FIX: list was missing closing bracket
+    return [
+        "get_mgr_motd",
+        "get_mgr_dns",
+        "get_mgr_ntp",
+        "get_mgr_syslog",
+        "get_mgr_tls",
+        "get_mgr_forwarding_mode",
+        "get_mgr_search_domain",
+        "get_mgr_backup",
+        "get_mgr_users",
+    ]
+
+def _build_api_path(name, node_uuid):
+    path = s.get_api_path(name)  # may be blocking
+    if not path:
+        return None
+    if "{node_uuid}" in path:
+        return path.format(node_uuid=node_uuid)
+    return path
+
+def _call_one_qa_blocking(node_fqdn, api_path, qa_name):
+    """
+    Run a single QA synchronously (blocking), to be called in a thread.
+    Returns dict like {"qa_name": <qa_name>, "result": <node_qa_dict>}
+    """
+    mgr_configs = s.NsxManagerConfigs(vip=node_fqdn, api_path=api_path)
+    check_conf = getattr(mgr_configs, qa_name)
+    node_qa = check_conf()  # blocking HTTP/API call that returns a dict
+    return {"qa_name": qa_name, "result": node_qa}
+
+async def _gather_manager_qas(node_fqdn, node_uuid, qa_list, executor, sem):
+    """
+    For one manager, run all QAs concurrently (but throttled by `sem`).
+    Return a merged dict of all key/value pairs from QA results.
+    """
+    loop = asyncio.get_running_loop()
+    tasks = []
+
+    for qa_name in qa_list:
+        api_path = _build_api_path(qa_name, node_uuid)
+        if not api_path:
+            continue
+
+        # Throttle concurrent tasks (avoid too many parallel HTTP calls)
+        async def run_one(qa=qa_name, path=api_path):
+            async with sem:
+                # Offload the blocking call to the thread pool:
+                res = await loop.run_in_executor(
+                    executor, _call_one_qa_blocking, node_fqdn, path, qa
+                )
+                return res
+
+        tasks.append(run_one())
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    merged = {}
+    for r in results:
+        if isinstance(r, Exception):
+            # You could also log and carry on
+            continue
+        # r["result"] is a dict of k->v for the QA
+        for k, v in r["result"].items():
+            merged[k] = v
+    return merged
+
+async def nsx_mgr_qa_async(mgr_df):
+    """
+    Async wrapper: runs managers and QAs concurrently,
+    returns an updated dataframe (copy) with results.
+    """
+    df = mgr_df.copy()
+    _ensure_timestamp_col(df)
+
+    qa_list = _get_mgr_qa_list()
+    mgr_list = df["manager_fqdn"].tolist()
+
+    # Collect the row index & uuid mapping in advance (synchronous DataFrame ops)
+    index_uuid = []
+    for node in mgr_list:
+        row_idx = _get_row_index(df, node)
+        node_uuid = df.loc[row_idx, "manager_uuid"]
+        index_uuid.append((node, row_idx, node_uuid))
+
+    timestamp = datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
+
+    # We’ll run per-manager concurrently, and inside each manager,
+    # per-QA concurrently (with a semaphore)
+    sem = asyncio.Semaphore(QA_CONCURRENCY)
+
+    # ThreadPoolExecutor to offload blocking calls
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # Prepare all manager tasks
+        tasks = []
+        for node_fqdn, row_idx, node_uuid in index_uuid:
+            async def process_one(node=node_fqdn, idx=row_idx, uuid=node_uuid):
+                merged = await _gather_manager_qas(
+                    node_fqdn=node, node_uuid=uuid, qa_list=qa_list,
+                    executor=executor, sem=sem
+                )
+                return (idx, merged)
+
+            tasks.append(process_one())
+
+        # Run them all
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Apply results to the DataFrame in the main thread (thread-safe)
+    for item in results:
+        if isinstance(item, Exception):
+            # Optionally log/handle the exception
+            continue
+        row_idx, merged = item
+
+        # set timestamp for the row
+        df.at[row_idx, "time_stamp"] = timestamp
+
+        # create any missing columns & write values
+        for k, v in merged.items():
+            if k not in df.columns:
+                df[k] = ""
+            df.at[row_idx, k] = v
+
+    return df
+
+# ---------- Example usage ----------
+def run_nsx_mgr_qa(mgr_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Synchronous entrypoint that just runs the async pipeline and returns the df.
+    """
+    return asyncio.run(nsx_mgr_qa_async(mgr_df))
+
+
