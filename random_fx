@@ -607,4 +607,105 @@ def run_nsx_mgr_qa(mgr_df: pd.DataFrame) -> pd.DataFrame:
     """
     return asyncio.run(nsx_mgr_qa_async(mgr_df))
 
+=======================================
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+import pandas as pd
+import sdnmodule as s  # your imported module
+
+MAX_THREADS = 500
+
+def _get_mgr_qa_list():
+    return [
+        "get_mgr_motd",
+        "get_mgr_dns",
+        "get_mgr_ntp",
+        "get_mgr_syslog",
+        "get_mgr_tls",
+        "get_mgr_forwarding_mode",
+        "get_mgr_search_domain",
+        "get_mgr_backup",
+        "get_mgr_users",
+    ]
+
+def _build_api_path(name, node_uuid):
+    path = s.get_api_path(name)
+    if not path:
+        return None
+    if "{node_uuid}" in path:
+        return path.format(node_uuid=node_uuid)
+    return path
+
+def process_node(node_fqdn, node_uuid, qa_list):
+    """
+    This will run in a thread.
+    Calls all QA functions for the given node.
+    """
+    time_stamp = datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
+    result = {
+        "manager_fqdn": node_fqdn,
+        "time_stamp": time_stamp
+    }
+
+    for qa in qa_list:
+        try:
+            path = _build_api_path(qa, node_uuid)
+            if not path:
+                continue
+            mgr_configs = s.NsxManagerConfigs(vip=node_fqdn, api_path=path)
+            check_conf = getattr(mgr_configs, qa)
+            node_qa = check_conf()  # returns dict
+            result.update(node_qa)
+        except Exception as e:
+            result[f"{qa}_error"] = str(e)
+
+    return result
+
+def nsx_mgr_qa_multithread(mgr_df: pd.DataFrame) -> pd.DataFrame:
+    df = mgr_df.copy()
+
+    if "time_stamp" not in df.columns:
+        df.insert(0, "time_stamp", "")
+
+    qa_list = _get_mgr_qa_list()
+    nodes = df[["manager_fqdn", "manager_uuid"]].to_dict("records")
+
+    results = []
+
+    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+        future_to_node = {
+            executor.submit(process_node, node["manager_fqdn"], node["manager_uuid"], qa_list): node
+            for node in nodes
+        }
+
+        for future in as_completed(future_to_node):
+            try:
+                node_result = future.result()
+                results.append(node_result)
+            except Exception as e:
+                failed_node = future_to_node[future]["manager_fqdn"]
+                print(f"[ERROR] Node {failed_node} failed: {e}")
+
+    # Merge results into DataFrame
+    for res in results:
+        fqdn = res.pop("manager_fqdn")
+        timestamp = res.pop("time_stamp")
+        row_idx = df.index[df["manager_fqdn"] == fqdn].tolist()
+        if not row_idx:
+            continue
+        idx = row_idx[0]
+        df.at[idx, "time_stamp"] = timestamp
+        for k, v in res.items():
+            if k not in df.columns:
+                df[k] = ""
+            df.at[idx, k] = v
+
+    return df
+
+# Usage
+# initial_df = pd.read_csv("your_file.csv")
+# final_df = nsx_mgr_qa_multithread(initial_df)
+# final_df.to_csv("results.csv", index=False)
+
 
