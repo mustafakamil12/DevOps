@@ -1,711 +1,111 @@
-# Asyncio Version
-import asyncio
-from datetime import datetime, timezone
-from typing import Dict, Any
-import pandas as pd
+scheduler_app/
+│
+├── main.py                # Entry point
+├── config.py              # DB config, constants
+├── db.py                  # MSSQL interactions
+├── scheduler/
+│   ├── __init__.py
+│   ├── task.py            # Task object
+│   ├── scheduler_manager.py # Main Scheduler class
+│   ├── rules_loader.py    # Load scheduleRulesTable
+│   └── change_detector.py # Compare snapshots (DeepDiff)
+└── modules/               # Small python applications (tasks)
 
-async def process_qa(node: str, mgr_node_uuid: str, qa_name: str) -> Dict[str, Any]:
-    path = s.get_api_path(qa_name)
-    if not path:
-        return {}
 
-    if "{node_uuid}" in path:
-        path = path.format(node_uuid=mgr_node_uuid)
+task class
+-----------
+from dataclasses import dataclass
+from datetime import datetime
 
-    mgr_configs = await asyncio.to_thread(s.NsxManagerConfigs, vip=node, api_path=path)
-    check_conf = getattr(mgr_configs, qa_name)
-    return await asyncio.to_thread(check_conf)
+@dataclass
+class Task:
+    module_name: str
+    trigger_time: str  # Could be cron string, or datetime, or custom object
+    # You can extend this with other attributes like args, kwargs, priority, etc.
 
-async def process_node(node: str, df: pd.DataFrame, qa_list: list[str]) -> Dict[str, Any]:
-    TIME_STAMP = datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
-    row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
-    mgr_node_uuid = df.loc[row_index, "manager_uuid"]
 
-    results = {"row_index": row_index, "time_stamp": TIME_STAMP}
-    qa_tasks = [
-        process_qa(node, mgr_node_uuid, qa_name)
-        for qa_name in qa_list
-    ]
-    qa_results = await asyncio.gather(*qa_tasks)
 
-    for qa_dict in qa_results:
-        for k, v in qa_dict.items():
-            results[k] = v
-    return results
+Rules loader
+------------
+import pyodbc
+from scheduler.task import Task
 
-async def nsx_mgr_qa_async(mgr_pd_df: pd.DataFrame) -> pd.DataFrame:
-    df = mgr_pd_df.copy()
+class RulesLoader:
+    def __init__(self, connection_string):
+        self.conn_str = connection_string
 
-    if "time_stamp" not in df.columns:
-        df["time_stamp"] = ""
-    col = df.pop("time_stamp")
-    df.insert(0, "time_stamp", col)
+    def load_rules(self) -> list[Task]:
+        tasks = []
+        with pyodbc.connect(self.conn_str) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT module_name, trigger_time FROM schedulRulesTable")
+            for row in cursor.fetchall():
+                tasks.append(Task(module_name=row.module_name, trigger_time=row.trigger_time))
+        return tasks
 
-    mgr_list = df["manager_fqdn"].to_list()
-    mgr_qa_list = ["get_mgr_motd", "get_mgr_dns", "get_mgr_ntp", "get_mgr_syslog", "get_mgr_tls",
-                   "get_mgr_forwarding_mode", "get_mgr_search_domain", "get_mgr_backup", "get_mgr_users"]
 
-    all_node_tasks = [process_node(node, df, mgr_qa_list) for node in mgr_list]
-    all_results = await asyncio.gather(*all_node_tasks)
+schedulerManager
+----------------
 
-    # Write results back to df
-    for result in all_results:
-        row_index = result.pop("row_index")
-        df.at[row_index, "time_stamp"] = result.pop("time_stamp")
-        for k, v in result.items():
-            if k not in df.columns:
-                df[k] = ""
-            df.at[row_index, k] = v
-
-    return df
-# ============================
-
-# Multithreading version
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-import pandas as pd
-
-def process_node_threaded(node: str, df: pd.DataFrame, qa_list: list[str]) -> dict:
-    TIME_STAMP = datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
-    row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
-    mgr_node_uuid = df.loc[row_index, "manager_uuid"]
-
-    result = {"row_index": row_index, "time_stamp": TIME_STAMP}
-    for qa_name in qa_list:
-        path = s.get_api_path(qa_name)
-        if not path:
-            continue
-        if "{node_uuid}" in path:
-            path = path.format(node_uuid=mgr_node_uuid)
-
-        mgr_configs = s.NsxManagerConfigs(vip=node, api_path=path)
-        check_conf = getattr(mgr_configs, qa_name)
-        qa_data = check_conf()
-        result.update(qa_data)
-    return result
-
-def nsx_mgr_qa_threaded(mgr_pd_df: pd.DataFrame) -> pd.DataFrame:
-    df = mgr_pd_df.copy()
-
-    if "time_stamp" not in df.columns:
-        df["time_stamp"] = ""
-    col = df.pop("time_stamp")
-    df.insert(0, "time_stamp", col)
-
-    mgr_list = df["manager_fqdn"].to_list()
-    mgr_qa_list = ["get_mgr_motd", "get_mgr_dns", "get_mgr_ntp", "get_mgr_syslog", "get_mgr_tls",
-                   "get_mgr_forwarding_mode", "get_mgr_search_domain", "get_mgr_backup", "get_mgr_users"]
-
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_node = {
-            executor.submit(process_node_threaded, node, df, mgr_qa_list): node
-            for node in mgr_list
-        }
-
-        for future in as_completed(future_to_node):
-            result = future.result()
-            row_index = result.pop("row_index")
-            df.at[row_index, "time_stamp"] = result.pop("time_stamp")
-            for k, v in result.items():
-                if k not in df.columns:
-                    df[k] = ""
-                df.at[row_index, k] = v
-
-    return df
-
-# ============
-# time wraper
-
+import schedule
 import time
-from functools import wraps
-
-def benchmark(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        mode = kwargs.get("mode", "unknown").upper()
-        print(f"\n🚀 Starting nsx_mgr_qa in {mode} mode...")
-        start = time.perf_counter()
-        result = func(*args, **kwargs)
-        end = time.perf_counter()
-        print(f"✅ Completed in {end - start:.2f} seconds.")
-        return result
-    return wrapper
-
-
-# ===============
-# Combined versions
-
-import pandas as pd
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Literal
-import asyncio
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# Dummy import placeholder (replace with actual logic)
-# import s
-
-QA_LIST = [
-    "get_mgr_motd", "get_mgr_dns", "get_mgr_ntp", "get_mgr_syslog", "get_mgr_tls",
-    "get_mgr_forwarding_mode", "get_mgr_search_domain", "get_mgr_backup", "get_mgr_users"
-]
-
-# --- Shared Utilities ---
-def get_time_stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
-
-# --- Threaded Logic ---
-def process_node_threaded(node: str, df: pd.DataFrame) -> dict:
-    row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
-    uuid = df.loc[row_index, "manager_uuid"]
-    result = {"row_index": row_index, "time_stamp": get_time_stamp()}
-
-    for qa in QA_LIST:
-        path = s.get_api_path(qa)
-        if not path:
-            continue
-        path = path.format(node_uuid=uuid) if "{node_uuid}" in path else path
-        mgr_configs = s.NsxManagerConfigs(vip=node, api_path=path)
-        result.update(getattr(mgr_configs, qa)())
-    return result
-
-# --- Async Logic ---
-async def process_qa_async(node: str, uuid: str, qa: str) -> dict:
-    path = s.get_api_path(qa)
-    if not path:
-        return {}
-    path = path.format(node_uuid=uuid) if "{node_uuid}" in path else path
-    mgr_configs = await asyncio.to_thread(s.NsxManagerConfigs, vip=node, api_path=path)
-    check_conf = getattr(mgr_configs, qa)
-    return await asyncio.to_thread(check_conf)
-
-async def process_node_async(node: str, df: pd.DataFrame) -> dict:
-    row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
-    uuid = df.loc[row_index, "manager_uuid"]
-    tasks = [process_qa_async(node, uuid, qa) for qa in QA_LIST]
-    results = await asyncio.gather(*tasks)
-    output = {"row_index": row_index, "time_stamp": get_time_stamp()}
-    for qa_dict in results:
-        output.update(qa_dict)
-    return output
-
-# --- Master Wrapper ---
-def nsx_mgr_qa(df: pd.DataFrame, mode: Literal["sync", "threaded", "async"] = "sync") -> pd.DataFrame:
-    df = df.copy()
-    if "time_stamp" not in df.columns:
-        df["time_stamp"] = ""
-    df.insert(0, "time_stamp", df.pop("time_stamp"))
-
-    mgr_list = df["manager_fqdn"].tolist()
-
-    if mode == "sync":
-        for node in mgr_list:
-            row_index = df.index[df["manager_fqdn"] == node].to_list()[0]
-            uuid = df.loc[row_index, "manager_uuid"]
-            df.at[row_index, "time_stamp"] = get_time_stamp()
-            for qa in QA_LIST:
-                path = s.get_api_path(qa)
-                if not path:
-                    continue
-                path = path.format(node_uuid=uuid) if "{node_uuid}" in path else path
-                mgr_configs = s.NsxManagerConfigs(vip=node, api_path=path)
-                result = getattr(mgr_configs, qa)()
-                for k, v in result.items():
-                    if k not in df.columns:
-                        df[k] = ""
-                    df.at[row_index, k] = v
-        return df
-
-    elif mode == "threaded":
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(process_node_threaded, node, df) for node in mgr_list]
-            for future in as_completed(futures):
-                result = future.result()
-                row = result.pop("row_index")
-                df.at[row, "time_stamp"] = result.pop("time_stamp")
-                for k, v in result.items():
-                    if k not in df.columns:
-                        df[k] = ""
-                    df.at[row, k] = v
-        return df
-
-    elif mode == "async":
-        async def run_all():
-            tasks = [process_node_async(node, df) for node in mgr_list]
-            results = await asyncio.gather(*tasks)
-            for result in results:
-                row = result.pop("row_index")
-                df.at[row, "time_stamp"] = result.pop("time_stamp")
-                for k, v in result.items():
-                    if k not in df.columns:
-                        df[k] = ""
-                    df.at[row, k] = v
-            return df
-        return asyncio.run(run_all())
-
-    else:
-        raise ValueError(f"Unsupported mode: {mode}")
-
-#====================================================
-
-🎯 Kerberos Role in Your App
-🔐 Auth Mechanism for Module A
-Kerberos is used to authenticate Module A to SQL Server without using a username/password — it uses a ticket instead.
-
-🎟️ Issues a Ticket (TGT)
-Kerberos authenticates the service account (e.g., via kinit) and provides a Ticket Granting Ticket (TGT).
-
-📜 Provides Session Credentials
-That TGT is used to get a service ticket for MSSQL (MSSQLSvc/hostname:port) so Module A can connect securely.
-
-🛡️ Enables Integrated Security
-SQL Server checks the Kerberos ticket and allows access only if valid — no need to store SQL passwords.
-
-🎭 Keytab Automation (optional)
-In containers, Kerberos can use a keytab file to auto-login the service account instead of prompting for passwords.
-
-#====================================================
-bash script to use kinit
-
-#!/bin/bash
-
-# Parse the YAML file using Python and export env vars
-eval $(python3 <<EOF
-import yaml
-data = yaml.safe_load(open('/app/secrets.yaml'))
-print(f"export KERB_USER='{data['kerberos']['user']}'")
-print(f"export KERB_PASS='{data['kerberos']['pass']}'")
-EOF
-)
-
-# Proceed with Kerberos login
-echo "🔐 Running kinit for $KERB_USER..."
-echo "$KERB_PASS" | kinit "$KERB_USER"
-
-if [ $? -ne 0 ]; then
-  echo "❌ Kerberos login failed."
-  exit 1
-fi
-
-echo "✅ Kerberos login successful."
-
-python3 /app/my_app.py
-
-#=====================================================
-
-nsxmgrinventory.py
-
-import pandas as pd
-import sdmodule as s  # Custom module, assumed to be available in your project
-import time
-import asyncio
+from deepdiff import DeepDiff
+from scheduler.rules_loader import RulesLoader
+from scheduler.task import Task
 from typing import List
 
-# Async wrapper to process a single VIP
-async def process_vip(vip: str, api_path: str, semaphore: asyncio.Semaphore) -> pd.DataFrame:
-    async with semaphore:
-        columns = ["region", "dc", "environment", "vsi_vdi", "vip", "cluster_uuid", "manager_uuid", "manager_fqdn"]
-        df = pd.DataFrame(columns=columns)
+class SchedulerManager:
+    def __init__(self, rules_loader: RulesLoader):
+        self.rules_loader = rules_loader
+        self.tasks: List[Task] = []
+        self.snapshot = None
 
-        try:
-            print(f"🔄 Processing VIP: {vip}")
-            api = s.NsxManagerConfigs(vip=vip, api_path=api_path)
-            mgrs_configs = await asyncio.to_thread(api.get_mgrs_configs)  # Run sync I/O in thread
+    def load_tasks(self):
+        """Fetch tasks from DB and store in self.tasks"""
+        self.tasks = self.rules_loader.load_rules()
 
-            for mgr, config in mgrs_configs.items():
-                df.loc[len(df)] = {
-                    "region": api.reg,
-                    "dc": api.dc,
-                    "environment": api.env,
-                    "vsi_vdi": api.vsi_vdi,
-                    "vip": vip,
-                    "cluster_uuid": config["cluster_uuid"],
-                    "manager_uuid": config["manager_uuid"],
-                    "manager_fqdn": mgr
-                }
-        except Exception as e:
-            print(f"❌ Error processing {vip}: {e}")
-        return df
+    def schedule_tasks(self):
+        """Schedule tasks using schedule module"""
+        schedule.clear()  # Clear previous schedules
+        for task in self.tasks:
+            # Example: handle simple time trigger (extendable)
+            schedule.every().day.at(task.trigger_time).do(self.run_module, task)
 
-# Main async function to gather all VIP results
-async def nsx_mgr_inv_async(vip_list: List[str]) -> pd.DataFrame:
-    api_path = s.get_api_path("get_mgr_cluster")
-    print(f"📡 Using API Path: {api_path}")
-    semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent VIPs
-    tasks = [process_vip(vip, api_path, semaphore) for vip in vip_list]
-    results = await asyncio.gather(*tasks)
-    return pd.concat(results, ignore_index=True)
+    def run_module(self, task: Task):
+        """Dynamically import and run a module"""
+        mod = __import__(f"modules.{task.module_name}", fromlist=[task.module_name])
+        if hasattr(mod, 'main'):
+            mod.main()  # Assumes each module has a main() function
 
-# Sync entry point
-def main():
-    start = time.time()
-    print(f"🚀 Starting collection...")
+    def detect_changes(self):
+        """Compare current snapshot with latest DB tasks"""
+        new_tasks = self.rules_loader.load_rules()
+        diff = DeepDiff([t.__dict__ for t in self.tasks],
+                        [t.__dict__ for t in new_tasks],
+                        ignore_order=True)
+        if diff:
+            print("Changes detected! Reloading schedule...")
+            self.tasks = new_tasks
+            self.schedule_tasks()
 
-    LOAD_FILE = "./database/vips_list.csv"
-    SAVE_FILE = "F:/database/nsxmgrs/nsxmgr_inventory.csv"
-    initial_df = pd.read_csv(LOAD_FILE)
-    vips = initial_df["vip"].str.lower().drop_duplicates().to_list()
+    def run_loop(self):
+        """Main loop"""
+        self.load_tasks()
+        self.schedule_tasks()
+        while True:
+            schedule.run_pending()
+            time.sleep(10)
+            self.detect_changes()
 
-    final_df = asyncio.run(nsx_mgr_inv_async(vips))
-    final_df.to_csv(SAVE_FILE, index=False)
 
-    print(f"✅ Done! Saved to: {SAVE_FILE}")
-    print(f"⏱️ Time elapsed: {time.time() - start:.2f} seconds")
+Main Entry point
+---------------
+
+from scheduler.rules_loader import RulesLoader
+from scheduler.scheduler_manager import SchedulerManager
 
 if __name__ == "__main__":
-    main()
-
-
-===================
-
- # Try to expand + button if it exists
-        try:
-            plus_button = supported_releases_cell.find_element(By.TAG_NAME, "button")
-            plus_button.click()
-            # Wait briefly for the extra items to load (can be refined)
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".sip-table-supportedReleases a"))
-            )
-        except Exception:
-            # No + button? Then it's already expanded
-            pass
-
-        # Now grab all <a> tags inside the cell
-        release_links = supported_releases_cell.find_elements(By.TAG_NAME, "a")
-        supported_releases = [a.text.strip() for a in release_links]
-
-======================
-
-wait.until(EC.presence_of_element_located((By.XPATH, "//b[contains(text(), 'Partner Name')]")))
-logging.debug("✅ Partner Name filter section loaded")
-
-vendors_to_select = ["Dell", "HP"]
-
-vendor_labels = driver.find_elements(By.CSS_SELECTOR, "label")
-
-for label in vendor_labels:
-    try:
-        text_element = label.find_element(By.CLASS_NAME, "custom-control-label-text")
-        vendor_name = text_element.text.strip()
-
-        if vendor_name in vendors_to_select:
-            checkbox = label.find_element(By.TAG_NAME, "input")
-            if not checkbox.is_selected():
-                driver.execute_script("arguments[0].click();", checkbox)
-                logging.debug(f"✅ Selected '{vendor_name}'")
-    except Exception as e:
-        logging.debug(f"⚠️ Skipping label due to error: {e}")
-
-========================
-
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-import smtplib
-
-def build_html_email(data_dict):
-    html = """
-    <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; }
-          .section { margin-bottom: 30px; }
-          .title { font-size: 18px; font-weight: bold; color: #333; border-bottom: 2px solid #ccc; padding-bottom: 5px; margin-bottom: 10px; }
-          .item { padding: 5px 0; border-bottom: 1px dashed #ddd; }
-        </style>
-      </head>
-      <body>
-    """
-
-    for key, values in data_dict.items():
-        html += f'<div class="section">'
-        html += f'<div class="title">{key}</div>'
-        for item in values:
-            html += f'<div class="item">{item}</div>'
-        html += '</div>'
-
-    html += "</body></html>"
-    return html
-
-# Example usage
-html_content = build_html_email(data)
-
-# Optional: send email (adjust SMTP, sender/recipient info)
-def send_fancy_email(subject, html_content, sender, recipient, smtp_host='smtp.example.com', smtp_port=587, password='your-password'):
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
-    msg['From'] = sender
-    msg['To'] = recipient
-
-    msg.attach(MIMEText(html_content, 'html'))
-
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(sender, password)
-        server.sendmail(sender, recipient, msg.as_string())
-        print("✅ Email sent!")
-
-# Uncomment to send (after filling details)
-# send_fancy_email("My Fancy List", html_content, "you@example.com", "friend@example.com")
-
-=================================================
-
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-import pandas as pd
-
-# Assuming your sdnmodule is imported as "s"
-# import sdnmodule as s
-
-# ---------- CONFIG ----------
-MAX_WORKERS = 10          # how many threads (I/O concurrency)
-QA_CONCURRENCY = 5        # per-manager throttling (avoid hammering an endpoint)
-# ----------------------------
-
-def _get_row_index(df, node):
-    # FIX: df.index(...) is not valid; use boolean mask:
-    idx_list = df.index[df["manager_fqdn"] == node].tolist()
-    if not idx_list:
-        raise ValueError(f"Manager {node} not found in dataframe.")
-    return idx_list[0]
-
-def _ensure_timestamp_col(df):
-    if "time_stamp" not in df.columns:
-        df.insert(0, "time_stamp", "")
-
-def _get_mgr_qa_list():
-    # FIX: list was missing closing bracket
-    return [
-        "get_mgr_motd",
-        "get_mgr_dns",
-        "get_mgr_ntp",
-        "get_mgr_syslog",
-        "get_mgr_tls",
-        "get_mgr_forwarding_mode",
-        "get_mgr_search_domain",
-        "get_mgr_backup",
-        "get_mgr_users",
-    ]
-
-def _build_api_path(name, node_uuid):
-    path = s.get_api_path(name)  # may be blocking
-    if not path:
-        return None
-    if "{node_uuid}" in path:
-        return path.format(node_uuid=node_uuid)
-    return path
-
-def _call_one_qa_blocking(node_fqdn, api_path, qa_name):
-    """
-    Run a single QA synchronously (blocking), to be called in a thread.
-    Returns dict like {"qa_name": <qa_name>, "result": <node_qa_dict>}
-    """
-    mgr_configs = s.NsxManagerConfigs(vip=node_fqdn, api_path=api_path)
-    check_conf = getattr(mgr_configs, qa_name)
-    node_qa = check_conf()  # blocking HTTP/API call that returns a dict
-    return {"qa_name": qa_name, "result": node_qa}
-
-async def _gather_manager_qas(node_fqdn, node_uuid, qa_list, executor, sem):
-    """
-    For one manager, run all QAs concurrently (but throttled by `sem`).
-    Return a merged dict of all key/value pairs from QA results.
-    """
-    loop = asyncio.get_running_loop()
-    tasks = []
-
-    for qa_name in qa_list:
-        api_path = _build_api_path(qa_name, node_uuid)
-        if not api_path:
-            continue
-
-        # Throttle concurrent tasks (avoid too many parallel HTTP calls)
-        async def run_one(qa=qa_name, path=api_path):
-            async with sem:
-                # Offload the blocking call to the thread pool:
-                res = await loop.run_in_executor(
-                    executor, _call_one_qa_blocking, node_fqdn, path, qa
-                )
-                return res
-
-        tasks.append(run_one())
-
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    merged = {}
-    for r in results:
-        if isinstance(r, Exception):
-            # You could also log and carry on
-            continue
-        # r["result"] is a dict of k->v for the QA
-        for k, v in r["result"].items():
-            merged[k] = v
-    return merged
-
-async def nsx_mgr_qa_async(mgr_df):
-    """
-    Async wrapper: runs managers and QAs concurrently,
-    returns an updated dataframe (copy) with results.
-    """
-    df = mgr_df.copy()
-    _ensure_timestamp_col(df)
-
-    qa_list = _get_mgr_qa_list()
-    mgr_list = df["manager_fqdn"].tolist()
-
-    # Collect the row index & uuid mapping in advance (synchronous DataFrame ops)
-    index_uuid = []
-    for node in mgr_list:
-        row_idx = _get_row_index(df, node)
-        node_uuid = df.loc[row_idx, "manager_uuid"]
-        index_uuid.append((node, row_idx, node_uuid))
-
-    timestamp = datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
-
-    # We’ll run per-manager concurrently, and inside each manager,
-    # per-QA concurrently (with a semaphore)
-    sem = asyncio.Semaphore(QA_CONCURRENCY)
-
-    # ThreadPoolExecutor to offload blocking calls
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # Prepare all manager tasks
-        tasks = []
-        for node_fqdn, row_idx, node_uuid in index_uuid:
-            async def process_one(node=node_fqdn, idx=row_idx, uuid=node_uuid):
-                merged = await _gather_manager_qas(
-                    node_fqdn=node, node_uuid=uuid, qa_list=qa_list,
-                    executor=executor, sem=sem
-                )
-                return (idx, merged)
-
-            tasks.append(process_one())
-
-        # Run them all
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Apply results to the DataFrame in the main thread (thread-safe)
-    for item in results:
-        if isinstance(item, Exception):
-            # Optionally log/handle the exception
-            continue
-        row_idx, merged = item
-
-        # set timestamp for the row
-        df.at[row_idx, "time_stamp"] = timestamp
-
-        # create any missing columns & write values
-        for k, v in merged.items():
-            if k not in df.columns:
-                df[k] = ""
-            df.at[row_idx, k] = v
-
-    return df
-
-# ---------- Example usage ----------
-def run_nsx_mgr_qa(mgr_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Synchronous entrypoint that just runs the async pipeline and returns the df.
-    """
-    return asyncio.run(nsx_mgr_qa_async(mgr_df))
-
-=======================================
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-import pandas as pd
-import sdnmodule as s  # your imported module
-
-MAX_THREADS = 500
-
-def _get_mgr_qa_list():
-    return [
-        "get_mgr_motd",
-        "get_mgr_dns",
-        "get_mgr_ntp",
-        "get_mgr_syslog",
-        "get_mgr_tls",
-        "get_mgr_forwarding_mode",
-        "get_mgr_search_domain",
-        "get_mgr_backup",
-        "get_mgr_users",
-    ]
-
-def _build_api_path(name, node_uuid):
-    path = s.get_api_path(name)
-    if not path:
-        return None
-    if "{node_uuid}" in path:
-        return path.format(node_uuid=node_uuid)
-    return path
-
-def process_node(node_fqdn, node_uuid, qa_list):
-    """
-    This will run in a thread.
-    Calls all QA functions for the given node.
-    """
-    time_stamp = datetime.now(timezone.utc).strftime("%m-%d-%Y %H:%M:%S UTC")
-    result = {
-        "manager_fqdn": node_fqdn,
-        "time_stamp": time_stamp
-    }
-
-    for qa in qa_list:
-        try:
-            path = _build_api_path(qa, node_uuid)
-            if not path:
-                continue
-            mgr_configs = s.NsxManagerConfigs(vip=node_fqdn, api_path=path)
-            check_conf = getattr(mgr_configs, qa)
-            node_qa = check_conf()  # returns dict
-            result.update(node_qa)
-        except Exception as e:
-            result[f"{qa}_error"] = str(e)
-
-    return result
-
-def nsx_mgr_qa_multithread(mgr_df: pd.DataFrame) -> pd.DataFrame:
-    df = mgr_df.copy()
-
-    if "time_stamp" not in df.columns:
-        df.insert(0, "time_stamp", "")
-
-    qa_list = _get_mgr_qa_list()
-    nodes = df[["manager_fqdn", "manager_uuid"]].to_dict("records")
-
-    results = []
-
-    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        future_to_node = {
-            executor.submit(process_node, node["manager_fqdn"], node["manager_uuid"], qa_list): node
-            for node in nodes
-        }
-
-        for future in as_completed(future_to_node):
-            try:
-                node_result = future.result()
-                results.append(node_result)
-            except Exception as e:
-                failed_node = future_to_node[future]["manager_fqdn"]
-                print(f"[ERROR] Node {failed_node} failed: {e}")
-
-    # Merge results into DataFrame
-    for res in results:
-        fqdn = res.pop("manager_fqdn")
-        timestamp = res.pop("time_stamp")
-        row_idx = df.index[df["manager_fqdn"] == fqdn].tolist()
-        if not row_idx:
-            continue
-        idx = row_idx[0]
-        df.at[idx, "time_stamp"] = timestamp
-        for k, v in res.items():
-            if k not in df.columns:
-                df[k] = ""
-            df.at[idx, k] = v
-
-    return df
-
-# Usage
-# initial_df = pd.read_csv("your_file.csv")
-# final_df = nsx_mgr_qa_multithread(initial_df)
-# final_df.to_csv("results.csv", index=False)
-
-
+    conn_str = "DRIVER={ODBC Driver 18 for SQL Server};SERVER=...;DATABASE=...;UID=...;PWD=..."
+    loader = RulesLoader(conn_str)
+    manager = SchedulerManager(loader)
+    manager.run_loop()
