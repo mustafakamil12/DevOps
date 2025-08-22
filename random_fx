@@ -12,6 +12,26 @@ scheduler_app/
 └── modules/               # Small python applications (tasks)
 
 
+scheduler_chatbot_flask/
+│
+├── app.py                  # Flask main app
+├── templates/
+│   └── index.html          # Chat UI
+├── static/
+│   └── style.css           # Optional CSS styling
+├── scheduler/
+│   ├── scheduler_manager.py
+│   ├── rules_loader.py
+│   ├── module_metadata.py
+│   ├── run_history.py
+│   └── task.py
+├── chatbot/
+│   └── bot.py
+└── requirements.txt
+
+
+
+
 task class
 -----------
 from dataclasses import dataclass
@@ -109,3 +129,191 @@ if __name__ == "__main__":
     loader = RulesLoader(conn_str)
     manager = SchedulerManager(loader)
     manager.run_loop()
+
+
+
+app.py
+------
+
+from flask import Flask, render_template, request, jsonify
+from scheduler.rules_loader import RulesLoader
+from scheduler.scheduler_manager import SchedulerManager
+from scheduler.run_history import RunHistory
+from scheduler.module_metadata import ModuleMetadataLoader
+from chatbot.bot import SchedulerChatbot
+
+app = Flask(__name__)
+
+# --- Setup Scheduler System ---
+conn_str = "DRIVER={ODBC Driver 18 for SQL Server};SERVER=YOUR_SERVER;DATABASE=YOUR_DB;UID=USER;PWD=PASS"
+rules_loader = RulesLoader(conn_str)
+run_history = RunHistory(conn_str)
+meta_loader = ModuleMetadataLoader(conn_str)
+scheduler_manager = SchedulerManager(rules_loader, run_history, meta_loader)
+scheduler_manager.load_tasks()  # Load all scheduled tasks
+
+# --- Setup Chatbot ---
+bot = SchedulerChatbot(scheduler_manager)
+
+# --- Routes ---
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@app.route("/chat", methods=["POST"])
+def chat():
+    user_input = request.json.get("message", "")
+    response = bot.handle_query(user_input)
+    return jsonify({"response": response})
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+
+chatbot
+--------
+
+class SchedulerChatbot:
+    def __init__(self, scheduler_manager):
+        self.sm = scheduler_manager
+
+    def handle_query(self, query: str) -> str:
+        query = query.lower()
+        
+        if "list tasks" in query or "all tasks" in query:
+            if not self.sm.tasks:
+                return "No tasks scheduled."
+            return "\n".join([f"- {t.module_name} at {t.trigger_time}" for t in self.sm.tasks])
+
+        elif "source table" in query or "destination table" in query or "stored procedure" in query:
+            parts = query.split()
+            module_name = parts[-1]
+            meta = self.sm.meta_loader.load_metadata(module_name)
+            if not meta:
+                return f"No metadata found for {module_name}"
+            info = [
+                f"Module: {meta.module_name}",
+                f"Source table: {meta.source_table}",
+                f"Destination table: {meta.dest_table}",
+                f"Pre-SP: {meta.pre_sp or 'None'}",
+                f"Post-SP: {meta.post_sp or 'None'}"
+            ]
+            return "\n".join(info)
+
+        elif "last run" in query or "run today" in query:
+            parts = query.split()
+            module_name = parts[-1]
+            last = self.sm.run_history.last_run(module_name)
+            if last:
+                run_time, status = last
+                return f"{module_name} last ran at {run_time} with status {status}"
+            else:
+                return f"{module_name} has never been run."
+        
+        elif "run module" in query:
+            parts = query.split()
+            module_name = parts[-1]
+            return self.sm.run_specific_module(module_name)
+
+        elif "help" in query:
+            return ("Ask me things like:\n"
+                    "- 'List tasks'\n"
+                    "- 'Source table for module X'\n"
+                    "- 'Destination table for module X'\n"
+                    "- 'Pre/Post stored procedures for module X'\n"
+                    "- 'Has module X run today?'\n"
+                    "- 'Last run of module X'\n"
+                    "- 'Run module X now'\n")
+        else:
+            return "I didn't understand that. Type 'help'."
+
+
+
+templates/index.html
+--------------------
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scheduler Chatbot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="chat-container">
+        <div id="chat-box"></div>
+        <input type="text" id="user-input" placeholder="Ask me..." autocomplete="off"/>
+        <button id="send-btn">Send</button>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById("chat-box");
+        const userInput = document.getElementById("user-input");
+        const sendBtn = document.getElementById("send-btn");
+
+        function appendMessage(sender, msg) {
+            const p = document.createElement("p");
+            p.innerHTML = `<b>${sender}:</b> ${msg}`;
+            chatBox.appendChild(p);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        sendBtn.addEventListener("click", () => {
+            const message = userInput.value.trim();
+            if (!message) return;
+            appendMessage("You", message);
+            fetch("/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message })
+            })
+            .then(res => res.json())
+            .then(data => appendMessage("Bot", data.response))
+            .catch(err => appendMessage("Bot", "Error: " + err));
+            userInput.value = "";
+        });
+
+        userInput.addEventListener("keypress", e => {
+            if (e.key === "Enter") sendBtn.click();
+        });
+    </script>
+</body>
+</html>
+
+
+static/style.css
+-----------------
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f5f5f5;
+}
+
+.chat-container {
+    width: 500px;
+    margin: 50px auto;
+    background: #fff;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0px 0px 10px #aaa;
+}
+
+#chat-box {
+    height: 400px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 10px;
+    margin-bottom: 10px;
+    background: #f9f9f9;
+}
+
+#user-input {
+    width: 80%;
+    padding: 10px;
+}
+
+#send-btn {
+    width: 18%;
+    padding: 10px;
+}
+
+
