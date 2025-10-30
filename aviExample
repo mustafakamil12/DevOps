@@ -1,0 +1,215 @@
+import asyncio
+import csv
+from functools import lru_cache
+from typing import Any, Dict, Iterable, List, Tuple
+
+from avi.sdk.avi_api import ApiSession  # unchanged
+# from tabulate import tabulate  # keep for CLI mode if you like
+
+# ---------------------------
+# Config knobs
+# ---------------------------
+GLOBAL_MAX_CONCURRENCY = 16     # total concurrent blocking calls across all controllers
+PER_CONTROLLER_CONCURRENCY = 6  # simultaneous calls per controller
+PAGE_SIZE = 200                 # tune based on controller capacity
+
+# ---------------------------
+# Helpers to run blocking SDK calls concurrently
+# ---------------------------
+async def run_sdk(api_call, *args, **kwargs):
+    """Run a single blocking SDK call in the default threadpool."""
+    return await asyncio.to_thread(api_call, *args, **kwargs)
+
+async def list_iterable_blocks(api_call, *args, **kwargs) -> List[Any]:
+    """
+    api.get_objects_iter(...) returns an iterator; consume it in a worker thread
+    and return a concrete list so we don't hold the GIL hopping repeatedly.
+    """
+    def _collect():
+        return list(api_call(*args, **kwargs))
+    return await asyncio.to_thread(_collect)
+
+# ---------------------------
+# Domain: batched fetchers
+# ---------------------------
+async def fetch_virtualservice_inventory(api, sem) -> List[Dict[str, Any]]:
+    params = {
+        'include_name': True,
+        'page_size': PAGE_SIZE,
+        # 'fields': 'uuid,name,enabled,pool,services',  # uncomment if API supports 'fields'
+    }
+    async with sem:
+        return await list_iterable_blocks(api.get_objects_iter, 'virtualservice-inventory', params=params)
+
+async def fetch_pool_inventory(api, sem) -> List[Dict[str, Any]]:
+    params = {
+        'include_name': True,
+        'page_size': PAGE_SIZE,
+        # 'fields': 'uuid,name,servers,lb_algorithm,health_monitor_refs',
+    }
+    async with sem:
+        return await list_iterable_blocks(api.get_objects_iter, 'pool-inventory', params=params)
+
+# Example of a generic “expand once, then local join” strategy:
+async def fetch_many(api, sem, endpoint: str, uuids: Iterable[str], fields: str = None) -> Dict[str, Dict[str, Any]]:
+    """
+    Fetch multiple objects by uuid in batched pages (if the API supports filtering),
+    otherwise fall back to full list + filter locally.
+    """
+    # If Avi supports filtering like '?uuid.in=a,b,c' or 'refers_to=' use it here.
+    # Otherwise, fetch all once (with fields) and build a dict.
+    params = {'page_size': PAGE_SIZE}
+    if fields:
+        params['fields'] = fields
+
+    async with sem:
+        objects = await list_iterable_blocks(api.get_objects_iter, endpoint, params=params)
+
+    index: Dict[str, Dict[str, Any]] = {o.get('uuid') or o.get('ref'): o for o in objects if 'uuid' in o or 'ref' in o}
+    return {u: index.get(u) for u in uuids}
+
+# ---------------------------
+# Transformation functions (pure Python)
+# ---------------------------
+def build_vs_rows(vs_items: List[Dict[str, Any]], pool_index: Dict[str, Dict[str, Any]]) -> Tuple[List[str], List[List[Any]]]:
+    """
+    Convert raw VS inventory JSON into rows; do local joins into pool_index when needed.
+    Keep it fast, avoid extra API calls here.
+    """
+    headers = ["controller", "vs_name", "vs_uuid", "enabled", "primary_pool", "port_list", "lastUpdated"]
+    rows: List[List[Any]] = []
+
+    for vs in vs_items:
+        name = vs.get('name')
+        uuid = vs.get('uuid')
+        enabled = vs.get('enabled')
+        services = vs.get('services') or []
+        port_list = ",".join(str(s.get('port')) for s in services if s and s.get('port') is not None)
+
+        pool_ref = vs.get('pool_ref') or vs.get('pool')  # depends on structure
+        pool_uuid = None
+        if isinstance(pool_ref, str) and pool_ref.split('/')[-1]:
+            pool_uuid = pool_ref.split('/')[-1]
+        pool_name = pool_index.get(pool_uuid, {}).get('name') if pool_uuid else None
+
+        # lastUpdated: if you have a timestamp field; else synthesize or remove
+        last_updated = vs.get('last_modified') or vs.get('last_modified_timestamp') or ""
+
+        rows.append(["{controller}", name, uuid, enabled, pool_name, port_list, last_updated])
+    return headers, rows
+
+def build_pool_rows(pools: List[Dict[str, Any]]) -> Tuple[List[str], List[List[Any]]]:
+    headers = ["controller", "pool_name", "pool_uuid", "server_count", "algorithm", "hm_count", "lastUpdated"]
+    rows: List[List[Any]] = []
+    for p in pools:
+        name = p.get('name')
+        uuid = p.get('uuid')
+        servers = p.get('servers') or []
+        algorithm = p.get('lb_algorithm') or ""
+        hms = p.get('health_monitor_refs') or []
+        last_updated = p.get('last_modified') or p.get('last_modified_timestamp') or ""
+        rows.append(["{controller}", name, uuid, len(servers), algorithm, len(hms), last_updated])
+    return headers, rows
+
+# ---------------------------
+# Per-controller job
+# ---------------------------
+class ControllerJob:
+    def __init__(self, controller: str, user: str, password: str, api_version: str | None, global_sem: asyncio.Semaphore):
+        self.controller = controller
+        self.user = user
+        self.password = password
+        self.api_version = api_version
+        self.global_sem = global_sem
+        self.api = None
+        self.local_sem = asyncio.Semaphore(PER_CONTROLLER_CONCURRENCY)
+
+    async def __aenter__(self):
+        # Create ApiSession (blocking) once per controller, keep-alive reused
+        def _mk_api():
+            if not self.api_version:
+                api = ApiSession.get_session(self.controller, self.user, self.password)
+                version = api.remote_api_version['Version']
+                api.delete_session()  # discover then reconnect pinned to version
+                return ApiSession.get_session(self.controller, self.user, self.password, api_version=version)
+            else:
+                return ApiSession.get_session(self.controller, self.user, self.password, api_version=self.api_version)
+
+        self.api = await asyncio.to_thread(_mk_api)
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if self.api:
+            # Close session to release sockets
+            await asyncio.to_thread(self.api.delete_session)
+
+    async def collect_vs(self) -> Tuple[List[str], List[List[Any]]]:
+        vs_items = await fetch_virtualservice_inventory(self.api, self.local_sem)
+
+        # Prefetch pools once; build index (avoid N calls inside loop)
+        pools = await fetch_pool_inventory(self.api, self.local_sem)
+        pool_index = {p.get('uuid'): p for p in pools if p.get('uuid')}
+
+        headers, rows = build_vs_rows(vs_items, pool_index)
+        # Stamp controller name without doing Python work in the hot path
+        for r in rows:
+            r[0] = self.controller
+        return headers, rows
+
+    async def collect_pools(self) -> Tuple[List[str], List[List[Any]]]:
+        pools = await fetch_pool_inventory(self.api, self.local_sem)
+        headers, rows = build_pool_rows(pools)
+        for r in rows:
+            r[0] = self.controller
+        return headers, rows
+
+# ---------------------------
+# CSV output (single write per file)
+# ---------------------------
+def write_csv(csv_filename: str, headers: List[str], rows: List[List[Any]]):
+    print(f"Outputting data to {csv_filename}")
+    # Optional: normalize last column to text for Excel
+    if rows and rows[0]:
+        for row in rows:
+            row[-1] = f"'{row[-1]}"
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
+        w = csv.writer(f, dialect='excel')
+        w.writerow(headers)
+        w.writerows(rows)
+    print(f"Writing to file: {csv_filename} is completed..!")
+
+# ---------------------------
+# Orchestrator
+# ---------------------------
+async def main_avi_inventory_report():
+    controller_list = ['192.168.0.20','192.168.0.30','192.168.0.40','192.168.0.40']
+    inventory_list = ['vs','p']
+
+    user = 'test'
+    password = 'test'   # fixed the typo 'pasword'
+    api_version = "22.1.6"  # or None to auto-discover; pin to reduce extra calls
+
+    global_sem = asyncio.Semaphore(GLOBAL_MAX_CONCURRENCY)
+
+    async def run_for_controller(controller: str):
+        async with ControllerJob(controller, user, password, api_version, global_sem) as job:
+            # Launch inventory collectors concurrently for this controller
+            tasks = []
+            if 'vs' in inventory_list:
+                tasks.append(asyncio.create_task(job.collect_vs()))
+            if 'p' in inventory_list:
+                tasks.append(asyncio.create_task(job.collect_pools()))
+
+            results: List[Tuple[List[str], List[List[Any]]]] = await asyncio.gather(*tasks)
+
+            # Write files (one per inventory type per controller)
+            for (headers, rows), inv in zip(results, [i for i in inventory_list if i in ['vs','p']]):
+                file_name = f"{controller}_{inv}_inventory.csv"
+                # CSV writing is cheap; keep it sync to avoid thread switching
+                write_csv(file_name, headers, rows)
+
+    # Run all controllers concurrently with safety
+    await asyncio.gather(*(run_for_controller(c) for c in controller_list))
+
+if __name__ == "__main__":
+    asyncio.run(main_avi_inventory_report())
