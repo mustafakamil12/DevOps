@@ -1,215 +1,208 @@
-import asyncio
-import csv
-from functools import lru_cache
-from typing import Any, Dict, Iterable, List, Tuple
+from __future__ import annotations
 
-from avi.sdk.avi_api import ApiSession  # unchanged
-# from tabulate import tabulate  # keep for CLI mode if you like
+"""
+Functional refactor of the original nsxm_1.py
 
-# ---------------------------
-# Config knobs
-# ---------------------------
-GLOBAL_MAX_CONCURRENCY = 16     # total concurrent blocking calls across all controllers
-PER_CONTROLLER_CONCURRENCY = 6  # simultaneous calls per controller
-PAGE_SIZE = 200                 # tune based on controller capacity
+Design goals
+- Keep I/O at the edges (load/save); keep the core as pure functions that
+  transform inputs to outputs.
+- No hidden globals; everything is passed explicitly (QA function list, timestamp, etc.).
+- Deterministic data-frame shaping: validate required columns, never mutate in-place unless
+  returning the mutated object.
+- Swappable execution: single-threaded by default; easy to wrap a parallel map if desired.
 
-# ---------------------------
-# Helpers to run blocking SDK calls concurrently
-# ---------------------------
-async def run_sdk(api_call, *args, **kwargs):
-    """Run a single blocking SDK call in the default threadpool."""
-    return await asyncio.to_thread(api_call, *args, **kwargs)
+Assumptions (based on the original code + module signatures):
+- Input DataFrame contains at least: ["manager_fqdn", "manager_uuid"].
+- For each manager (FQDN), we call a list of QA functions implemented on
+  sdnmodule.NsxManagerConfigs. Each function returns a small dict of columns.
+- A timestamp is added (column name: "time_stamp").
+"""
 
-async def list_iterable_blocks(api_call, *args, **kwargs) -> List[Any]:
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Callable, Iterable, Mapping, Sequence
+import pandas as pd
+
+import sdnmodule as s
+
+# -----------------------------
+# Types
+# -----------------------------
+QAResult = Mapping[str, object]
+QAFunc = Callable[[s.NsxManagerConfigs], QAResult]  # bound method on a client instance
+
+
+# -----------------------------
+# Core pure helpers
+# -----------------------------
+
+def iso_utc_now() -> str:
+    """Produce a deterministic ISO 8601 UTC timestamp string."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def ensure_timestamp_col(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure a `time_stamp` column exists and is column 0 (pure transformation)."""
+    out = df.copy()
+    if "time_stamp" not in out.columns:
+        out.insert(0, "time_stamp", "")
+    else:
+        # Move to column 0 if not already
+        cols = list(out.columns)
+        if cols[0] != "time_stamp":
+            cols = ["time_stamp"] + [c for c in cols if c != "time_stamp"]
+            out = out[cols]
+    return out
+
+
+def validate_required_columns(df: pd.DataFrame, required: Sequence[str]) -> None:
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+
+def extract_manager_rows(df: pd.DataFrame) -> list[tuple[int, str, str]]:
+    """Return list of (row_index, fqdn, manager_uuid)."""
+    validate_required_columns(df, ["manager_fqdn", "manager_uuid"]) 
+    # Preserve row order deterministically
+    rows: list[tuple[int, str, str]] = []
+    for idx, row in df[["manager_fqdn", "manager_uuid"]].iterrows():
+        fqdn = str(row["manager_fqdn"]).strip()
+        uuid = str(row["manager_uuid"]).strip()
+        rows.append((idx, fqdn, uuid))
+    return rows
+
+
+def fetch_qa_for_manager(
+    fqdn: str,
+    qa_methods: Sequence[str],
+    *,
+    client_factory: Callable[[str], s.NsxManagerConfigs],
+) -> dict:
     """
-    api.get_objects_iter(...) returns an iterator; consume it in a worker thread
-    and return a concrete list so we don't hold the GIL hopping repeatedly.
+    For a single manager FQDN, call all QA methods and merge their dict results.
+    Network/IO happens here; keep all other functions pure.
     """
-    def _collect():
-        return list(api_call(*args, **kwargs))
-    return await asyncio.to_thread(_collect)
-
-# ---------------------------
-# Domain: batched fetchers
-# ---------------------------
-async def fetch_virtualservice_inventory(api, sem) -> List[Dict[str, Any]]:
-    params = {
-        'include_name': True,
-        'page_size': PAGE_SIZE,
-        # 'fields': 'uuid,name,enabled,pool,services',  # uncomment if API supports 'fields'
-    }
-    async with sem:
-        return await list_iterable_blocks(api.get_objects_iter, 'virtualservice-inventory', params=params)
-
-async def fetch_pool_inventory(api, sem) -> List[Dict[str, Any]]:
-    params = {
-        'include_name': True,
-        'page_size': PAGE_SIZE,
-        # 'fields': 'uuid,name,servers,lb_algorithm,health_monitor_refs',
-    }
-    async with sem:
-        return await list_iterable_blocks(api.get_objects_iter, 'pool-inventory', params=params)
-
-# Example of a generic “expand once, then local join” strategy:
-async def fetch_many(api, sem, endpoint: str, uuids: Iterable[str], fields: str = None) -> Dict[str, Dict[str, Any]]:
-    """
-    Fetch multiple objects by uuid in batched pages (if the API supports filtering),
-    otherwise fall back to full list + filter locally.
-    """
-    # If Avi supports filtering like '?uuid.in=a,b,c' or 'refers_to=' use it here.
-    # Otherwise, fetch all once (with fields) and build a dict.
-    params = {'page_size': PAGE_SIZE}
-    if fields:
-        params['fields'] = fields
-
-    async with sem:
-        objects = await list_iterable_blocks(api.get_objects_iter, endpoint, params=params)
-
-    index: Dict[str, Dict[str, Any]] = {o.get('uuid') or o.get('ref'): o for o in objects if 'uuid' in o or 'ref' in o}
-    return {u: index.get(u) for u in uuids}
-
-# ---------------------------
-# Transformation functions (pure Python)
-# ---------------------------
-def build_vs_rows(vs_items: List[Dict[str, Any]], pool_index: Dict[str, Dict[str, Any]]) -> Tuple[List[str], List[List[Any]]]:
-    """
-    Convert raw VS inventory JSON into rows; do local joins into pool_index when needed.
-    Keep it fast, avoid extra API calls here.
-    """
-    headers = ["controller", "vs_name", "vs_uuid", "enabled", "primary_pool", "port_list", "lastUpdated"]
-    rows: List[List[Any]] = []
-
-    for vs in vs_items:
-        name = vs.get('name')
-        uuid = vs.get('uuid')
-        enabled = vs.get('enabled')
-        services = vs.get('services') or []
-        port_list = ",".join(str(s.get('port')) for s in services if s and s.get('port') is not None)
-
-        pool_ref = vs.get('pool_ref') or vs.get('pool')  # depends on structure
-        pool_uuid = None
-        if isinstance(pool_ref, str) and pool_ref.split('/')[-1]:
-            pool_uuid = pool_ref.split('/')[-1]
-        pool_name = pool_index.get(pool_uuid, {}).get('name') if pool_uuid else None
-
-        # lastUpdated: if you have a timestamp field; else synthesize or remove
-        last_updated = vs.get('last_modified') or vs.get('last_modified_timestamp') or ""
-
-        rows.append(["{controller}", name, uuid, enabled, pool_name, port_list, last_updated])
-    return headers, rows
-
-def build_pool_rows(pools: List[Dict[str, Any]]) -> Tuple[List[str], List[List[Any]]]:
-    headers = ["controller", "pool_name", "pool_uuid", "server_count", "algorithm", "hm_count", "lastUpdated"]
-    rows: List[List[Any]] = []
-    for p in pools:
-        name = p.get('name')
-        uuid = p.get('uuid')
-        servers = p.get('servers') or []
-        algorithm = p.get('lb_algorithm') or ""
-        hms = p.get('health_monitor_refs') or []
-        last_updated = p.get('last_modified') or p.get('last_modified_timestamp') or ""
-        rows.append(["{controller}", name, uuid, len(servers), algorithm, len(hms), last_updated])
-    return headers, rows
-
-# ---------------------------
-# Per-controller job
-# ---------------------------
-class ControllerJob:
-    def __init__(self, controller: str, user: str, password: str, api_version: str | None, global_sem: asyncio.Semaphore):
-        self.controller = controller
-        self.user = user
-        self.password = password
-        self.api_version = api_version
-        self.global_sem = global_sem
-        self.api = None
-        self.local_sem = asyncio.Semaphore(PER_CONTROLLER_CONCURRENCY)
-
-    async def __aenter__(self):
-        # Create ApiSession (blocking) once per controller, keep-alive reused
-        def _mk_api():
-            if not self.api_version:
-                api = ApiSession.get_session(self.controller, self.user, self.password)
-                version = api.remote_api_version['Version']
-                api.delete_session()  # discover then reconnect pinned to version
-                return ApiSession.get_session(self.controller, self.user, self.password, api_version=version)
+    client = client_factory(fqdn)
+    out: dict[str, object] = {}
+    for name in qa_methods:
+        method = getattr(client, name, None)
+        if method is None or not callable(method):
+            # Record discoverability error as explicit columns to avoid hard failures
+            out[f"{name}_qa"] = "err"
+            out[f"{name}_error"] = f"QA method not found: {name}"
+            continue
+        try:
+            result = method()  # type: ignore[misc]
+            if isinstance(result, dict):
+                out.update(result)
             else:
-                return ApiSession.get_session(self.controller, self.user, self.password, api_version=self.api_version)
+                out[f"{name}_qa"] = "err"
+                out[f"{name}_error"] = "QA returned non-dict"
+        except Exception as e:  # keep going; capture per-QA failure
+            out[f"{name}_qa"] = "err"
+            out[f"{name}_error"] = str(e)
+    return out
 
-        self.api = await asyncio.to_thread(_mk_api)
-        return self
 
-    async def __aexit__(self, exc_type, exc, tb):
-        if self.api:
-            # Close session to release sockets
-            await asyncio.to_thread(self.api.delete_session)
+def compose_output_frame(
+    base_df: pd.DataFrame,
+    rows: Iterable[tuple[int, str, str]],
+    per_manager_results: Mapping[str, Mapping[str, object]],
+    timestamp: str,
+) -> pd.DataFrame:
+    """
+    Return a new DataFrame with the timestamp filled and QA columns merged.
+    - `rows` preserves mapping from FQDN back to original row indices.
+    - `per_manager_results` is keyed by FQDN.
+    """
+    out = base_df.copy()
+    # Fill timestamp per-row once work for that manager is complete
+    for idx, fqdn, _uuid in rows:
+        out.at[idx, "time_stamp"] = timestamp
+        if fqdn in per_manager_results:
+            for k, v in per_manager_results[fqdn].items():
+                out.at[idx, k] = v
+    return out
 
-    async def collect_vs(self) -> Tuple[List[str], List[List[Any]]]:
-        vs_items = await fetch_virtualservice_inventory(self.api, self.local_sem)
 
-        # Prefetch pools once; build index (avoid N calls inside loop)
-        pools = await fetch_pool_inventory(self.api, self.local_sem)
-        pool_index = {p.get('uuid'): p for p in pools if p.get('uuid')}
+# -----------------------------
+# Public functional API
+# -----------------------------
 
-        headers, rows = build_vs_rows(vs_items, pool_index)
-        # Stamp controller name without doing Python work in the hot path
-        for r in rows:
-            r[0] = self.controller
-        return headers, rows
+@dataclass(frozen=True)
+class PipelineConfig:
+    qa_methods: tuple[str, ...]
 
-    async def collect_pools(self) -> Tuple[List[str], List[List[Any]]]:
-        pools = await fetch_pool_inventory(self.api, self.local_sem)
-        headers, rows = build_pool_rows(pools)
-        for r in rows:
-            r[0] = self.controller
-        return headers, rows
 
-# ---------------------------
-# CSV output (single write per file)
-# ---------------------------
-def write_csv(csv_filename: str, headers: List[str], rows: List[List[Any]]):
-    print(f"Outputting data to {csv_filename}")
-    # Optional: normalize last column to text for Excel
-    if rows and rows[0]:
-        for row in rows:
-            row[-1] = f"'{row[-1]}"
-    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-        w = csv.writer(f, dialect='excel')
-        w.writerow(headers)
-        w.writerows(rows)
-    print(f"Writing to file: {csv_filename} is completed..!")
+def nsx_mgr_qa_functional(
+    mgr_pd_df: pd.DataFrame,
+    config: PipelineConfig,
+    *,
+    now_ts: str | None = None,
+    client_factory: Callable[[str], s.NsxManagerConfigs] | None = None,
+) -> pd.DataFrame:
+    """Functional entrypoint: df -> df (pure except for injected client).
 
-# ---------------------------
-# Orchestrator
-# ---------------------------
-async def main_avi_inventory_report():
-    controller_list = ['192.168.0.20','192.168.0.30','192.168.0.40','192.168.0.40']
-    inventory_list = ['vs','p']
+    Parameters
+    ----------
+    mgr_pd_df : DataFrame
+        Input inventory with at least [manager_fqdn, manager_uuid].
+    config : PipelineConfig
+        The tuple of QA method names to invoke (e.g., ("get_mgr_dns", ...)).
+    now_ts : Optional explicit timestamp to inject (useful for testing).
+    client_factory : Function creating an NsxManagerConfigs given an FQDN.
 
-    user = 'test'
-    password = 'test'   # fixed the typo 'pasword'
-    api_version = "22.1.6"  # or None to auto-discover; pin to reduce extra calls
+    Returns
+    -------
+    DataFrame with timestamp and QA columns merged per manager row.
+    """
+    # Stage 1: normalize/validate base frame
+    base = ensure_timestamp_col(mgr_pd_df)
+    rows = extract_manager_rows(base)
+    ts = now_ts or iso_utc_now()
 
-    global_sem = asyncio.Semaphore(GLOBAL_MAX_CONCURRENCY)
+    # Stage 2: run QA per manager (I/O) with injected factory for testability
+    if client_factory is None:
+        client_factory = lambda fqdn: s.NsxManagerConfigs(vip=fqdn)  # default
 
-    async def run_for_controller(controller: str):
-        async with ControllerJob(controller, user, password, api_version, global_sem) as job:
-            # Launch inventory collectors concurrently for this controller
-            tasks = []
-            if 'vs' in inventory_list:
-                tasks.append(asyncio.create_task(job.collect_vs()))
-            if 'p' in inventory_list:
-                tasks.append(asyncio.create_task(job.collect_pools()))
+    per_manager: dict[str, dict[str, object]] = {}
+    for _idx, fqdn, _uuid in rows:
+        per_manager[fqdn] = fetch_qa_for_manager(
+            fqdn, config.qa_methods, client_factory=client_factory
+        )
 
-            results: List[Tuple[List[str], List[List[Any]]]] = await asyncio.gather(*tasks)
+    # Stage 3: compose output frame (pure)
+    return compose_output_frame(base, rows, per_manager, ts)
 
-            # Write files (one per inventory type per controller)
-            for (headers, rows), inv in zip(results, [i for i in inventory_list if i in ['vs','p']]):
-                file_name = f"{controller}_{inv}_inventory.csv"
-                # CSV writing is cheap; keep it sync to avoid thread switching
-                write_csv(file_name, headers, rows)
 
-    # Run all controllers concurrently with safety
-    await asyncio.gather(*(run_for_controller(c) for c in controller_list))
+# -----------------------------
+# Optional: thin I/O wrappers (kept minimal and isolated)
+# -----------------------------
+
+def run_from_csv(
+    input_csv: str,
+    output_csv: str,
+    qa_methods: Sequence[str],
+) -> None:
+    df_in = pd.read_csv(input_csv)
+    cfg = PipelineConfig(qa_methods=tuple(qa_methods))
+    df_out = nsx_mgr_qa_functional(df_in, cfg)
+    df_out.to_csv(output_csv, index=False)
+
 
 if __name__ == "__main__":
-    asyncio.run(main_avi_inventory_report())
+    # Example usage (replace with argparse/typer if you want CLI control):
+    DEFAULT_QA = (
+        "get_mgr_motd",
+        "get_mgr_dns",
+        "get_mgr_ntp",
+        "get_mgr_syslog",
+        "get_mgr_tls",
+        "get_mgr_forwarding_mode",
+        "get_mgr_search_domain",
+        "get_mgr_backup",
+        "get_mgr_users",
+    )
+    # run_from_csv("inventory.csv", "nsxmgr_qa.csv", DEFAULT_QA)
+    pass
