@@ -1,208 +1,29 @@
-from __future__ import annotations
+import asyncio
 
-"""
-Functional refactor of the original nsxm_1.py
+async def _gather_manager_qas(
+    index_uuid_list,
+    qa_list,
+    max_nodes: int = 16,            # limit concurrent nodes
+    max_paths_per_node: int = 8,    # limit concurrent path-builds per node
+):
+    node_sem = asyncio.Semaphore(max_nodes)
 
-Design goals
-- Keep I/O at the edges (load/save); keep the core as pure functions that
-  transform inputs to outputs.
-- No hidden globals; everything is passed explicitly (QA function list, timestamp, etc.).
-- Deterministic data-frame shaping: validate required columns, never mutate in-place unless
-  returning the mutated object.
-- Swappable execution: single-threaded by default; easy to wrap a parallel map if desired.
+    async def process_node(host, idx, uuid):
+        async with node_sem:
+            path_sem = asyncio.Semaphore(max_paths_per_node)
 
-Assumptions (based on the original code + module signatures):
-- Input DataFrame contains at least: ["manager_fqdn", "manager_uuid"].
-- For each manager (FQDN), we call a list of QA functions implemented on
-  sdnmodule.NsxManagerConfigs. Each function returns a small dict of columns.
-- A timestamp is added (column name: "time_stamp").
-"""
+            async def build_one(qa_name: str):
+                # throttle blocking work for this node
+                async with path_sem:
+                    # run blocking call in threadpool without blocking the event loop
+                    return await asyncio.to_thread(_build_api_path, qa_name, uuid)
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Callable, Iterable, Mapping, Sequence
-import pandas as pd
+            coros = [build_one(qa) for qa in qa_list]
+            paths = await asyncio.gather(*coros, return_exceptions=True)
 
-import sdnmodule as s
+            # normalize exceptions/None to empty strings so tuple shape is stable
+            clean_paths = [p if isinstance(p, str) and p is not None else "" for p in paths]
+            return (host, idx, uuid, *clean_paths)
 
-# -----------------------------
-# Types
-# -----------------------------
-QAResult = Mapping[str, object]
-QAFunc = Callable[[s.NsxManagerConfigs], QAResult]  # bound method on a client instance
-
-
-# -----------------------------
-# Core pure helpers
-# -----------------------------
-
-def iso_utc_now() -> str:
-    """Produce a deterministic ISO 8601 UTC timestamp string."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def ensure_timestamp_col(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure a `time_stamp` column exists and is column 0 (pure transformation)."""
-    out = df.copy()
-    if "time_stamp" not in out.columns:
-        out.insert(0, "time_stamp", "")
-    else:
-        # Move to column 0 if not already
-        cols = list(out.columns)
-        if cols[0] != "time_stamp":
-            cols = ["time_stamp"] + [c for c in cols if c != "time_stamp"]
-            out = out[cols]
-    return out
-
-
-def validate_required_columns(df: pd.DataFrame, required: Sequence[str]) -> None:
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
-
-
-def extract_manager_rows(df: pd.DataFrame) -> list[tuple[int, str, str]]:
-    """Return list of (row_index, fqdn, manager_uuid)."""
-    validate_required_columns(df, ["manager_fqdn", "manager_uuid"]) 
-    # Preserve row order deterministically
-    rows: list[tuple[int, str, str]] = []
-    for idx, row in df[["manager_fqdn", "manager_uuid"]].iterrows():
-        fqdn = str(row["manager_fqdn"]).strip()
-        uuid = str(row["manager_uuid"]).strip()
-        rows.append((idx, fqdn, uuid))
-    return rows
-
-
-def fetch_qa_for_manager(
-    fqdn: str,
-    qa_methods: Sequence[str],
-    *,
-    client_factory: Callable[[str], s.NsxManagerConfigs],
-) -> dict:
-    """
-    For a single manager FQDN, call all QA methods and merge their dict results.
-    Network/IO happens here; keep all other functions pure.
-    """
-    client = client_factory(fqdn)
-    out: dict[str, object] = {}
-    for name in qa_methods:
-        method = getattr(client, name, None)
-        if method is None or not callable(method):
-            # Record discoverability error as explicit columns to avoid hard failures
-            out[f"{name}_qa"] = "err"
-            out[f"{name}_error"] = f"QA method not found: {name}"
-            continue
-        try:
-            result = method()  # type: ignore[misc]
-            if isinstance(result, dict):
-                out.update(result)
-            else:
-                out[f"{name}_qa"] = "err"
-                out[f"{name}_error"] = "QA returned non-dict"
-        except Exception as e:  # keep going; capture per-QA failure
-            out[f"{name}_qa"] = "err"
-            out[f"{name}_error"] = str(e)
-    return out
-
-
-def compose_output_frame(
-    base_df: pd.DataFrame,
-    rows: Iterable[tuple[int, str, str]],
-    per_manager_results: Mapping[str, Mapping[str, object]],
-    timestamp: str,
-) -> pd.DataFrame:
-    """
-    Return a new DataFrame with the timestamp filled and QA columns merged.
-    - `rows` preserves mapping from FQDN back to original row indices.
-    - `per_manager_results` is keyed by FQDN.
-    """
-    out = base_df.copy()
-    # Fill timestamp per-row once work for that manager is complete
-    for idx, fqdn, _uuid in rows:
-        out.at[idx, "time_stamp"] = timestamp
-        if fqdn in per_manager_results:
-            for k, v in per_manager_results[fqdn].items():
-                out.at[idx, k] = v
-    return out
-
-
-# -----------------------------
-# Public functional API
-# -----------------------------
-
-@dataclass(frozen=True)
-class PipelineConfig:
-    qa_methods: tuple[str, ...]
-
-
-def nsx_mgr_qa_functional(
-    mgr_pd_df: pd.DataFrame,
-    config: PipelineConfig,
-    *,
-    now_ts: str | None = None,
-    client_factory: Callable[[str], s.NsxManagerConfigs] | None = None,
-) -> pd.DataFrame:
-    """Functional entrypoint: df -> df (pure except for injected client).
-
-    Parameters
-    ----------
-    mgr_pd_df : DataFrame
-        Input inventory with at least [manager_fqdn, manager_uuid].
-    config : PipelineConfig
-        The tuple of QA method names to invoke (e.g., ("get_mgr_dns", ...)).
-    now_ts : Optional explicit timestamp to inject (useful for testing).
-    client_factory : Function creating an NsxManagerConfigs given an FQDN.
-
-    Returns
-    -------
-    DataFrame with timestamp and QA columns merged per manager row.
-    """
-    # Stage 1: normalize/validate base frame
-    base = ensure_timestamp_col(mgr_pd_df)
-    rows = extract_manager_rows(base)
-    ts = now_ts or iso_utc_now()
-
-    # Stage 2: run QA per manager (I/O) with injected factory for testability
-    if client_factory is None:
-        client_factory = lambda fqdn: s.NsxManagerConfigs(vip=fqdn)  # default
-
-    per_manager: dict[str, dict[str, object]] = {}
-    for _idx, fqdn, _uuid in rows:
-        per_manager[fqdn] = fetch_qa_for_manager(
-            fqdn, config.qa_methods, client_factory=client_factory
-        )
-
-    # Stage 3: compose output frame (pure)
-    return compose_output_frame(base, rows, per_manager, ts)
-
-
-# -----------------------------
-# Optional: thin I/O wrappers (kept minimal and isolated)
-# -----------------------------
-
-def run_from_csv(
-    input_csv: str,
-    output_csv: str,
-    qa_methods: Sequence[str],
-) -> None:
-    df_in = pd.read_csv(input_csv)
-    cfg = PipelineConfig(qa_methods=tuple(qa_methods))
-    df_out = nsx_mgr_qa_functional(df_in, cfg)
-    df_out.to_csv(output_csv, index=False)
-
-
-if __name__ == "__main__":
-    # Example usage (replace with argparse/typer if you want CLI control):
-    DEFAULT_QA = (
-        "get_mgr_motd",
-        "get_mgr_dns",
-        "get_mgr_ntp",
-        "get_mgr_syslog",
-        "get_mgr_tls",
-        "get_mgr_forwarding_mode",
-        "get_mgr_search_domain",
-        "get_mgr_backup",
-        "get_mgr_users",
-    )
-    # run_from_csv("inventory.csv", "nsxmgr_qa.csv", DEFAULT_QA)
-    pass
+    # fan-out across nodes, still bounded by node_sem
+    return await asyncio.gather(*(process_node(h, i, u) for h, i, u in index_uuid_list))
