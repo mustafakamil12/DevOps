@@ -1,29 +1,55 @@
 import asyncio
+import inspect
 
-async def _gather_manager_qas(
-    index_uuid_list,
-    qa_list,
-    max_nodes: int = 16,            # limit concurrent nodes
-    max_paths_per_node: int = 8,    # limit concurrent path-builds per node
-):
-    node_sem = asyncio.Semaphore(max_nodes)
+# qa_list must align with the api_path positions in each row
+# rows like: (node, uuid, path_for_q1, path_for_q2, ..., path_for_qN)
 
-    async def process_node(host, idx, uuid):
-        async with node_sem:
-            path_sem = asyncio.Semaphore(max_paths_per_node)
+async def run_checks_for_all_nodes(rows, qa_list, max_concurrency: int = 32):
+    sem = asyncio.Semaphore(max_concurrency)
 
-            async def build_one(qa_name: str):
-                # throttle blocking work for this node
-                async with path_sem:
-                    # run blocking call in threadpool without blocking the event loop
-                    return await asyncio.to_thread(_build_api_path, qa_name, uuid)
+    async def run_one(node: str, uuid: str, qa_name: str, api_path: str):
+        if not api_path:
+            return (node, qa_name, {"_error": "no_api_path"})
 
-            coros = [build_one(qa) for qa in qa_list]
-            paths = await asyncio.gather(*coros, return_exceptions=True)
+        # safety: format uuid if still templated
+        if "{node_uuid}" in api_path:
+            api_path = api_path.format(node_uuid=uuid)
 
-            # normalize exceptions/None to empty strings so tuple shape is stable
-            clean_paths = [p if isinstance(p, str) and p is not None else "" for p in paths]
-            return (host, idx, uuid, *clean_paths)
+        # Build the manager with the specific path
+        mgr_configs = s.NsxManagerConfigs(vip=node, api_path=api_path)
 
-    # fan-out across nodes, still bounded by node_sem
-    return await asyncio.gather(*(process_node(h, i, u) for h, i, u in index_uuid_list))
+        # Resolve the QA method dynamically
+        func = getattr(mgr_configs, qa_name, None)
+        if func is None:
+            return (node, qa_name, {"_error": f"method_not_found: {qa_name}"})
+
+        async with sem:
+            try:
+                # Support both async and sync implementations transparently
+                if inspect.iscoroutinefunction(func):
+                    result = await func()
+                else:
+                    result = await asyncio.to_thread(func)
+                return (node, qa_name, result)
+            except Exception as e:
+                return (node, qa_name, {"_error": f"{type(e).__name__}: {e}"})
+
+    # Schedule one task per (node, qa) pair
+    tasks = []
+    for row in rows:
+        node, uuid, *paths = row
+        for qa_name, api_path in zip(qa_list, paths):
+            tasks.append(asyncio.create_task(run_one(node, uuid, qa_name, api_path)))
+
+    # Execute concurrently with error isolation
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Normalize exceptions (should be rare thanks to try/except above)
+    out = []
+    for r in results:
+        if isinstance(r, Exception):
+            out.append(("_unknown_", "_unknown_", {"_error": f"{type(r).__name__}: {r}"}))
+        else:
+            out.append(r)
+
+    return out  # list of tuples: (node, qa_name, result_dict_or_value)
