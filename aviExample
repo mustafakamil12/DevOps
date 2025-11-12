@@ -1,55 +1,7 @@
-import asyncio
-import inspect
-
-# qa_list must align with the api_path positions in each row
-# rows like: (node, uuid, path_for_q1, path_for_q2, ..., path_for_qN)
-
-async def run_checks_for_all_nodes(rows, qa_list, max_concurrency: int = 32):
-    sem = asyncio.Semaphore(max_concurrency)
-
-    async def run_one(node: str, uuid: str, qa_name: str, api_path: str):
-        if not api_path:
-            return (node, qa_name, {"_error": "no_api_path"})
-
-        # safety: format uuid if still templated
-        if "{node_uuid}" in api_path:
-            api_path = api_path.format(node_uuid=uuid)
-
-        # Build the manager with the specific path
-        mgr_configs = s.NsxManagerConfigs(vip=node, api_path=api_path)
-
-        # Resolve the QA method dynamically
-        func = getattr(mgr_configs, qa_name, None)
-        if func is None:
-            return (node, qa_name, {"_error": f"method_not_found: {qa_name}"})
-
-        async with sem:
-            try:
-                # Support both async and sync implementations transparently
-                if inspect.iscoroutinefunction(func):
-                    result = await func()
-                else:
-                    result = await asyncio.to_thread(func)
-                return (node, qa_name, result)
-            except Exception as e:
-                return (node, qa_name, {"_error": f"{type(e).__name__}: {e}"})
-
-    # Schedule one task per (node, qa) pair
-    tasks = []
-    for row in rows:
-        node, uuid, *paths = row
-        for qa_name, api_path in zip(qa_list, paths):
-            tasks.append(asyncio.create_task(run_one(node, uuid, qa_name, api_path)))
-
-    # Execute concurrently with error isolation
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Normalize exceptions (should be rare thanks to try/except above)
-    out = []
-    for r in results:
-        if isinstance(r, Exception):
-            out.append(("_unknown_", "_unknown_", {"_error": f"{type(r).__name__}: {r}"}))
-        else:
-            out.append(r)
-
-    return out  # list of tuples: (node, qa_name, result_dict_or_value)
+def filter_df_by_api_results(df, api_call_results, vip_col="manager_fqdn"):
+    # api_call_results: list of (vip, qa_name, payload_or_none)
+    bad_vips = {vip for (vip, _qa, payload) in api_call_results if payload is None}
+    if not bad_vips:
+        return df  # nothing to drop
+    # keep only rows whose VIP is NOT in bad_vips
+    return df[~df[vip_col].isin(bad_vips)].reset_index(drop=True)
