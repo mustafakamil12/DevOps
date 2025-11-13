@@ -1,7 +1,8 @@
-def filter_df_by_api_results(df, api_call_results, vip_col="manager_fqdn"):
-    # api_call_results: list of (vip, qa_name, payload_or_none)
-    bad_vips = {vip for (vip, _qa, payload) in api_call_results if payload is None}
-    if not bad_vips:
-        return df  # nothing to drop
-    # keep only rows whose VIP is NOT in bad_vips
-    return df[~df[vip_col].isin(bad_vips)].reset_index(drop=True)
+def drop_unresponsive_nodes(filter_results, index_uuid, *, case_insensitive=True):
+    # Build set of FQDNs that failed (payload is None)
+    if case_insensitive:
+        bad = {fqdn.casefold() for fqdn, _, payload in filter_results if payload is None}
+        return [t for t in index_uuid if t[0].casefold() not in bad]
+    else:
+        bad = {fqdn for fqdn, _, payload in filter_results if payload is None}
+        return [t for t in index_uuid if t[0] not in bad]
