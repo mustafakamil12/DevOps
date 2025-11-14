@@ -112,7 +112,6 @@ class NSXApiClient:
 
         coros = [run_one(q) for q in qa_list]
         results = await asyncio.gather(*coros, return_exceptions=False)
-
         return {qa_name: payload for qa_name, payload in results}
 =================================================================================================
 call from main app
