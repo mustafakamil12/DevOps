@@ -1,5 +1,13 @@
-# Clean newlines from all columns (optional but recommended)
-df = df.applymap(lambda x: str(x).replace("\n", " ").strip() if isinstance(x, str) else x)
+result = " | ".join(
+    x for x in gpuDeviceModel 
+    if isinstance(x, str) and x.strip() and x.strip() != "[None]"
+)
 
-# Convert to list of tuples
-data_to_insert = list(df.itertuples(index=False, name=None))
+
+def clean_gpu_list(raw_list):
+    if not isinstance(raw_list, list):
+        return []
+    return [
+        x for x in raw_list
+        if isinstance(x, str) and x.strip() and x.strip() != "[None]"
+    ]
