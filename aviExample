@@ -1,14 +1,5 @@
-target_id = 456
+# Clean newlines from all columns (optional but recommended)
+df = df.applymap(lambda x: str(x).replace("\n", " ").strip() if isinstance(x, str) else x)
 
-model = next((p["modelName"] for p in json_data["products"]
-              if p["productId"] == target_id), None)
-
-print(model)
-
-
-=============
-
-target_id = 456
-
-model = [p["modelName"] for p in json_data["products"] if p["productId"] == target_id][0]
-print(model)
+# Convert to list of tuples
+data_to_insert = list(df.itertuples(index=False, name=None))
