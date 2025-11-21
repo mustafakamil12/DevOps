@@ -120,3 +120,25 @@ class AviHttpClient:
             # httpx.Client can handle absolute URLs as well.
             path = next_url
             query = {}  # query already encoded in next_url
+
+
+===============================================================
+
+# -------------------- helpers Sync --------------------
+def api_creator(controller, user, password, api_version):
+    if not api_version:
+        # Discover Controller's version if no API version specified
+        tmp_api = AviHttpClient(controller, user, password, api_version=None, verify=False)
+        api_version = tmp_api.discover_version()
+        tmp_api.close()
+        print(f'Discovered Controller version {api_version}.')
+
+    # Create the main reusable HTTP session with the discovered version
+    api = AviHttpClient(controller, user, password, api_version=api_version, verify=False)
+    return api
+
+
+async def api_creator_async(controller, user, password, api_version):
+    """Run the blocking api_creator() in a separate thread, like your original code."""
+    return await asyncio.to_thread(api_creator, controller, user, password, api_version)
+
