@@ -1,13 +1,122 @@
-result = " | ".join(
-    x for x in gpuDeviceModel 
-    if isinstance(x, str) and x.strip() and x.strip() != "[None]"
-)
+import asyncio
+from typing import Any, Dict, Iterable, Optional
+import httpx
 
 
-def clean_gpu_list(raw_list):
-    if not isinstance(raw_list, list):
-        return []
-    return [
-        x for x in raw_list
-        if isinstance(x, str) and x.strip() and x.strip() != "[None]"
-    ]
+class AviHttpClient:
+    """
+    Lightweight replacement for avi.sdk.avi_api.ApiSession using httpx.Client.
+
+    - Keeps a single HTTP connection pool (one session).
+    - Provides get_objects_iter(resource, params, tenant) similar to the Avi SDK.
+    """
+
+    def __init__(
+        self,
+        controller: str,
+        user: str,
+        password: str,
+        api_version: Optional[str] = None,
+        verify: bool = True,
+        timeout: float = 30.0,
+    ) -> None:
+        # controller is like "10.0.0.1" or "controller.domain"
+        base_url = f"https://{controller}"
+
+        # Basic Auth (username/password like you use in Postman)
+        auth = (user, password)
+
+        headers: Dict[str, str] = {}
+
+        # If your controller expects the version in a header, set it here.
+        # Adjust this header name/value for your environment if needed.
+        if api_version:
+            headers["X-Avi-Version"] = api_version
+
+        self.controller = controller
+        self.api_version = api_version
+        self.client = httpx.Client(
+            base_url=base_url,
+            auth=auth,
+            headers=headers,
+            verify=verify,      # set to False if you have self-signed certs
+            timeout=timeout,
+        )
+
+    def close(self) -> None:
+        self.client.close()
+
+    def discover_version(self) -> str:
+        """
+        Discover controller API version by calling some version endpoint.
+
+        You MUST adjust this to match your controller's API.
+        Example below assumes a JSON with something like:
+            {"version": {"Version": "22.1.6"}}
+        """
+        # TODO: replace with the real endpoint your controller exposes
+        resp = self.client.get("/api/initial-data")
+        resp.raise_for_status()
+        data = resp.json()
+        # Adjust keys to match your actual payload:
+        version = (
+            data.get("version", {})
+            .get("Version")
+        )
+        if not version:
+            raise RuntimeError(f"Could not discover API version from: {data}")
+        return version
+
+    def get_objects_iter(
+        self,
+        resource: str,
+        params: Optional[Dict[str, Any]] = None,
+        tenant: Optional[str] = None,
+    ) -> Iterable[Dict[str, Any]]:
+        """
+        Rough equivalent of api.get_objects_iter from Avi SDK.
+
+        - resource: e.g. 'virtualservice-inventory'
+        - maps to /api/virtualservice_inventory (dash -> underscore) like the Avi SDK
+        - supports basic pagination if the response has 'next' and 'results' fields
+        """
+
+        # Avi SDK maps 'virtualservice-inventory' -> '/api/virtualservice_inventory'
+        path = f"/api/{resource.replace('-', '_')}"
+
+        # Copy params so we can mutate safely
+        query: Dict[str, Any] = dict(params or {})
+
+        # Tenant header if used in your environment
+        headers: Dict[str, str] = {}
+        if tenant:
+            headers["X-Avi-Tenant"] = tenant
+
+        while True:
+            resp = self.client.get(path, params=query, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+
+            # Many REST APIs use {"results": [...], "next": "url..." }
+            items = data.get("results")
+            if items is None:
+                # Fallbacks if your controller uses a different shape
+                items = data.get("items")
+            if items is None:
+                # If the endpoint directly returns a list
+                if isinstance(data, list):
+                    items = data
+                else:
+                    items = []
+
+            for obj in items:
+                yield obj
+
+            next_url = data.get("next")
+            if not next_url:
+                break
+
+            # For the next iteration, use the 'next' URL directly.
+            # httpx.Client can handle absolute URLs as well.
+            path = next_url
+            query = {}  # query already encoded in next_url
