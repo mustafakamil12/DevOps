@@ -1,0 +1,24 @@
+| Purpose                                      | Tool      | Command                             |
+| -------------------------------------------- | --------- | ----------------------------------- |
+| Style / Lint / Speed                         | `ruff`    | `ruff check .`                      |
+| Code Quality / Maintainability               | `pylint`  | `pylint your_app/`                  |
+| Cognitive Complexity / Maintainability index | `radon`   | `radon cc -s -a .` and `radon mi .` |
+| Security Analysis                            | `bandit`  | `bandit -r .`                       |
+| Advanced Pattern / Secure Rules              | `semgrep` | `semgrep --config=auto .`           |
+
+
+#!/bin/bash
+ruff check .
+pylint your_app/
+radon cc -s -a your_app/
+radon mi your_app/
+bandit -r your_app/
+semgrep --config=auto your_app/
+
+
+bash code_quality.sh
+
+
+Sonar qube leve check 
+
+ruff + pylint + radon + bandit + semgrep
