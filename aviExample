@@ -133,3 +133,180 @@ vs_inventory = await asyncio.to_thread(
 ==============================================
 
 client.close()
+
++++++++++++++++++++++++++++++++++++++++++++++++
+
+def avi_login(client: httpx.Client, controller_ip: str, username: str, password: str) -> bool:
+    """
+    Performs API login to Avi Controller.
+    Stores session cookies inside the provided httpx.Client.
+
+    Returns True if login succeeds.
+    """
+    login_url = f"https://{controller_ip}/login"
+    payload = {"username": username, "password": password}
+
+    try:
+        resp = client.post(login_url, json=payload)
+        if resp.status_code == 200:
+            print("Login successful.")
+            return True
+        else:
+            print(f"Login failed with status {resp.status_code}: {resp.text}")
+            return False
+    except httpx.RequestError as e:
+        print(f"Login error: {e}")
+        return False
+
+++++++++++++++++++++++++++++++++++++++++++++++++++
+
+import httpx
+from typing import Any, Dict, Iterable, Optional
+
+
+def avi_login(client: httpx.Client, controller_ip: str, username: str, password: str) -> bool:
+    """
+    Login to Avi Controller and store cookies in client.
+    """
+    login_url = f"https://{controller_ip}/login"
+    payload = {"username": username, "password": password}
+
+    try:
+        resp = client.post(login_url, json=payload)
+        if resp.status_code == 200:
+            print("Login successful.")
+            return True
+        else:
+            print(f"Login failed {resp.status_code}: {resp.text}")
+            return False
+    except httpx.RequestError as e:
+        print(f"Login error: {e}")
+        return False
+
+
+class AviHttpClient:
+    def __init__(
+        self,
+        client: httpx.Client,
+        controller_ip: str,
+        username: str,
+        password: str
+    ):
+        self.client = client
+        self.controller_ip = controller_ip
+        self.username = username
+        self.password = password
+
+    # ------------------------------------------------------
+    # Helper: GET with auto-login if cookies expired
+    # ------------------------------------------------------
+    def _get_with_relogin(self, url: str, params=None, headers=None):
+        resp = self.client.get(url, params=params, headers=headers)
+
+        # Session expired? Avi returns 401 or text like "Invalid session"
+        if resp.status_code in (401, 419) or "Invalid session" in resp.text:
+            print("Session expired → logging in again...")
+            ok = avi_login(self.client, self.controller_ip, self.username, self.password)
+            if not ok:
+                raise RuntimeError("Re-login failed")
+            # Retry the request ONE time
+            resp = self.client.get(url, params=params, headers=headers)
+
+        resp.raise_for_status()
+        return resp
+
+    # ------------------------------------------------------
+    # Exact replacement for ApiSession.get_objects_iter()
+    # ------------------------------------------------------
+    def get_objects_iter(
+        self,
+        resource: str,
+        params: Optional[Dict[str, Any]] = None,
+        tenant: Optional[str] = None,
+    ) -> Iterable[Dict[str, Any]]:
+
+        resource_path = resource.replace("-", "_")
+        path = f"/api/{resource_path}"
+
+        headers: Dict[str, str] = {}
+        if tenant:
+            headers["X-Avi-Tenant"] = tenant
+
+        url: str = path
+        query = params or {}
+
+        while True:
+            resp = self._get_with_relogin(url, params=query, headers=headers)
+            data = resp.json()
+
+            # Extract items
+            if isinstance(data, dict):
+                if "results" in data:
+                    items = data["results"]
+                elif "items" in data:
+                    items = data["items"]
+                else:
+                    # Single object endpoint
+                    items = [data]
+            elif isinstance(data, list):
+                items = data
+            else:
+                items = []
+
+            for obj in items:
+                yield obj
+
+            # Pagination
+            next_url = None
+            if isinstance(data, dict):
+                next_url = data.get("next")
+
+            if not next_url:
+                break
+
+            if next_url.startswith("http"):
+                url = next_url
+            else:
+                url = next_url
+
+            query = {}
+
+++++++++++++++++++++++++++++++++++++++++++++++++++
+
+client = httpx.Client(
+    base_url=f"https://{controller_ip}",
+    verify=False,
+    auth=None,             # IMPORTANT: Avi login uses cookies, not Basic Auth
+    headers={
+        "Accept": "application/json",
+        "Accept-Encoding": "application/json",
+        "X-Avi-Version": api_version,
+        "X-Avi-Tenant": tenant,
+    },
+    timeout=30.0,
+)
+
+# Login first time
+avi_login(client, controller_ip, username, password)
+
+api = AviHttpClient(
+    client=client,
+    controller_ip=controller_ip,
+    username=username,
+    password=password
+)
+
++++++++++++++++++++++++++++++++++++++++++++++
+
+vs_inventory = await asyncio.to_thread(
+    lambda: list(
+        api.get_objects_iter(
+            "virtualservice-inventory",
+            params={"include_name": True},
+            tenant="admin"
+        )
+    )
+)
+
+
+++++++++++++++++++++++++++++++++++++++++++
