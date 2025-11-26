@@ -310,3 +310,78 @@ vs_inventory = await asyncio.to_thread(
 
 
 ++++++++++++++++++++++++++++++++++++++++++
+
+def get_objects_iter(
+    self,
+    resource: str,
+    params: Optional[Dict[str, Any]] = None,
+    tenant: Optional[str] = None,
+) -> Iterable[Dict[str, Any]]:
+    """
+    Generator that yields objects from Avi list endpoints, similar to ApiSession.get_objects_iter().
+    Handles pagination and auto re-login.
+    """
+
+    # "virtualservice-inventory" -> "/api/virtualservice_inventory"
+    # "cluster/runtime"          -> "/api/cluster/runtime"
+    resource_path = resource.replace("-", "_")
+    path = f"/api/{resource_path}"
+
+    # Optional tenant override header
+    headers: Dict[str, str] = {}
+    if tenant:
+        headers["X-Avi-Tenant"] = tenant
+
+    query = params or {}
+
+    # ---- First request using the computed path ----
+    resp = self._get_with_relogin(path, params=query, headers=headers)
+
+    # Track last URL to avoid infinite loops if API returns same "next" forever
+    last_url: Optional[str] = None
+
+    while True:
+        data = resp.json()
+
+        # Normalize the items
+        if isinstance(data, dict):
+            if "results" in data and isinstance(data["results"], list):
+                items = data["results"]
+            elif "items" in data and isinstance(data["items"], list):
+                items = data["items"]
+            else:
+                # Single-object endpoint, still yield it
+                items = [data]
+        elif isinstance(data, list):
+            items = data
+        else:
+            items = []
+
+        for obj in items:
+            yield obj
+
+        # ---- Pagination handling ----
+        next_url = None
+        if isinstance(data, dict):
+            next_url = data.get("next")
+
+        # No more pages -> break
+        if not next_url:
+            break
+
+        # Normalize relative vs absolute "next" URLs
+        # If you have client.base_url set (e.g. https://169.193.169.103),
+        # httpx can handle relative paths directly.
+        if isinstance(next_url, str):
+            # Guard against buggy APIs that keep returning the same "next" URL
+            if last_url is not None and next_url == last_url:
+                # Prevent infinite loop
+                break
+
+            last_url = next_url
+        else:
+            break  # unexpected type, stop to avoid infinite loop
+
+        # For subsequent pages, we don't need extra params; they’re in next_url
+        resp = self._get_with_relogin(next_url, params=None, headers=headers)
+
