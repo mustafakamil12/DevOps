@@ -1,387 +1,345 @@
-import httpx
+import asyncio
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, AsyncIterator
 
-controller_ip = "10.0.0.1"   # change
-user = "admin"               # change
-password = "xxxx"            # change
-api_version = "22.1.6"       # change
-tenant = "admin"             # change if needed
-
-client = httpx.Client(
-    base_url=f"https://{controller_ip}",
-    auth=(user, password),
-    headers={
-        "Accept": "application/json",
-        "Accept-Encoding": "application/json",
-        "X-Avi-Version": api_version,
-        "X-Avi-Tenant": tenant,
-    },
-    verify=False,      # True if you have valid certs
-    timeout=30.0,
-)
-
-=============================================
-
-from typing import Any, Dict, Iterable, Optional
 import httpx
 
 
-class AviHttpClient:
+# ----------------- Config Model -----------------
+
+@dataclass
+class AviControllerConfig:
+    controller_ip: str
+    username: str
+    password: str
+    api_version: str
+    tenant: str = "admin"
+    verify: bool = False
+
+
+# ----------------- Async Login -----------------
+
+async def avi_login_async(
+    client: httpx.AsyncClient,
+    controller_ip: str,
+    username: str,
+    password: str
+) -> bool:
+    """Login to Avi controller and store cookies in client."""
+    login_url = f"https://{controller_ip}/login"
+    payload = {"username": username, "password": password}
+
+    try:
+        resp = await client.post(login_url, json=payload)
+        if resp.status_code == 200:
+            print(f"[{controller_ip}] Login successful.")
+            return True
+        else:
+            print(f"[{controller_ip}] Login failed {resp.status_code}: {resp.text}")
+            return False
+    except httpx.RequestError as e:
+        print(f"[{controller_ip}] Login error: {e}")
+        return False
+
+
+# ----------------- Avi Async Client Wrapper -----------------
+
+class AviAsyncClient:
     """
-    Small wrapper that mimics ApiSession.get_objects_iter(),
-    but uses a passed-in httpx.Client.
+    Async Avi API client using httpx.AsyncClient.
+    - One instance per controller.
+    - Handles login + re-login.
+    - Provides get_objects_iter() for list endpoints.
+    - Provides get_json() for single-object endpoints.
     """
 
-    def __init__(self, client: httpx.Client):
-        self.client = client
+    def __init__(self, cfg: AviControllerConfig):
+        self.cfg = cfg
+        self.client: Optional[httpx.AsyncClient] = None
 
-    def get_objects_iter(
-        self,
-        resource: str,
-        params: Optional[Dict[str, Any]] = None,
-        tenant: Optional[str] = None,
-    ) -> Iterable[Dict[str, Any]]:
-        """
-        Replacement for ApiSession.get_objects_iter().
-
-        - resource: e.g. 'virtualservice', 'virtualservice-inventory', 'pool'
-        - params:   query params dict
-        - tenant:   optional tenant header override
-
-        Yields objects one by one, handling pagination.
-        """
-
-        # Map "virtualservice-inventory" → "/api/virtualservice_inventory"
-        # Map "cluster/runtime" → "/api/cluster/runtime"
-        resource_path = resource.replace("-", "_")
-        path = f"/api/{resource_path}"
-
-        # Tenant header override (if provided)
-        headers: Dict[str, str] = {}
-        if tenant:
-            headers["X-Avi-Tenant"] = tenant
-
-        # First URL & params
-        url: str = path       # httpx.Client with base_url will resolve this
-        query: Dict[str, Any] = dict(params or {})
-
-        while True:
-            resp = self.client.get(url, params=query, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-
-            items: Iterable[Any]
-
-            # Handle list-style and single-object responses
-            if isinstance(data, dict):
-                if "results" in data and isinstance(data["results"], list):
-                    items = data["results"]
-                elif "items" in data and isinstance(data["items"], list):
-                    items = data["items"]
-                else:
-                    # Single object (non-list endpoint)
-                    items = [data]
-            elif isinstance(data, list):
-                items = data
-            else:
-                items = []
-
-            for obj in items:
-                yield obj
-
-            # Pagination: look for "next"
-            next_url = data.get("next") if isinstance(data, dict) else None
-            if not next_url:
-                break
-
-            # "next" can be absolute or relative
-            if isinstance(next_url, str):
-                if next_url.startswith("http"):
-                    url = next_url         # full URL
-                else:
-                    url = next_url         # relative; httpx + base_url handles it
-                # After first page, query params are encoded in next_url itself
-                query = {}
-            else:
-                break
-
-
-============================================
-
-api = AviHttpClient(client)
-
-============================================
-
-vs_list = list(api.get_objects_iter(
-    'virtualservice-inventory',
-    params={'include_name': True},
-    tenant=tenant,
-))
-
-============================================
-
-vs_inventory = await asyncio.to_thread(
-    lambda: list(
-        api.get_objects_iter(
-            'virtualservice-inventory',
-            params={'include_name': True},
-            tenant=tenant,
+    async def __aenter__(self) -> "AviAsyncClient":
+        self.client = httpx.AsyncClient(
+            base_url=f"https://{self.cfg.controller_ip}",
+            verify=self.cfg.verify,
+            headers={
+                "Accept": "application/json",
+                "Accept-Encoding": "application/json",
+                "X-Avi-Version": self.cfg.api_version,
+                "X-Avi-Tenant": self.cfg.tenant,
+            },
+            timeout=30.0,
+            limits=httpx.Limits(
+                max_connections=50,
+                max_keepalive_connections=20,
+            ),
+            http2=False,  # set to True if controller supports HTTP/2
         )
-    )
-)
 
+        ok = await avi_login_async(
+            self.client,
+            self.cfg.controller_ip,
+            self.cfg.username,
+            self.cfg.password,
+        )
+        if not ok:
+            raise RuntimeError(f"Login failed for {self.cfg.controller_ip}")
+        return self
 
-==============================================
+    async def __aexit__(self, exc_type, exc, tb):
+        if self.client:
+            await self.client.aclose()
 
-client.close()
+    # ---------- Internal helper: GET with auto re-login ----------
 
-+++++++++++++++++++++++++++++++++++++++++++++++
-
-def avi_login(client: httpx.Client, controller_ip: str, username: str, password: str) -> bool:
-    """
-    Performs API login to Avi Controller.
-    Stores session cookies inside the provided httpx.Client.
-
-    Returns True if login succeeds.
-    """
-    login_url = f"https://{controller_ip}/login"
-    payload = {"username": username, "password": password}
-
-    try:
-        resp = client.post(login_url, json=payload)
-        if resp.status_code == 200:
-            print("Login successful.")
-            return True
-        else:
-            print(f"Login failed with status {resp.status_code}: {resp.text}")
-            return False
-    except httpx.RequestError as e:
-        print(f"Login error: {e}")
-        return False
-
-++++++++++++++++++++++++++++++++++++++++++++++++++
-
-import httpx
-from typing import Any, Dict, Iterable, Optional
-
-
-def avi_login(client: httpx.Client, controller_ip: str, username: str, password: str) -> bool:
-    """
-    Login to Avi Controller and store cookies in client.
-    """
-    login_url = f"https://{controller_ip}/login"
-    payload = {"username": username, "password": password}
-
-    try:
-        resp = client.post(login_url, json=payload)
-        if resp.status_code == 200:
-            print("Login successful.")
-            return True
-        else:
-            print(f"Login failed {resp.status_code}: {resp.text}")
-            return False
-    except httpx.RequestError as e:
-        print(f"Login error: {e}")
-        return False
-
-
-class AviHttpClient:
-    def __init__(
+    async def _get_with_relogin(
         self,
-        client: httpx.Client,
-        controller_ip: str,
-        username: str,
-        password: str
-    ):
-        self.client = client
-        self.controller_ip = controller_ip
-        self.username = username
-        self.password = password
+        url_or_path: str,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> httpx.Response:
+        assert self.client is not None
+        resp = await self.client.get(url_or_path, params=params, headers=headers)
 
-    # ------------------------------------------------------
-    # Helper: GET with auto-login if cookies expired
-    # ------------------------------------------------------
-    def _get_with_relogin(self, url: str, params=None, headers=None):
-        resp = self.client.get(url, params=params, headers=headers)
-
-        # Session expired? Avi returns 401 or text like "Invalid session"
+        # Session expired? Re-login once and retry
         if resp.status_code in (401, 419) or "Invalid session" in resp.text:
-            print("Session expired → logging in again...")
-            ok = avi_login(self.client, self.controller_ip, self.username, self.password)
+            print(f"[{self.cfg.controller_ip}] Session expired → re-login...")
+            ok = await avi_login_async(
+                self.client,
+                self.cfg.controller_ip,
+                self.cfg.username,
+                self.cfg.password,
+            )
             if not ok:
-                raise RuntimeError("Re-login failed")
-            # Retry the request ONE time
-            resp = self.client.get(url, params=params, headers=headers)
+                raise RuntimeError(f"Re-login failed for {self.cfg.controller_ip}")
+
+            resp = await self.client.get(url_or_path, params=params, headers=headers)
 
         resp.raise_for_status()
         return resp
 
-    # ------------------------------------------------------
-    # Exact replacement for ApiSession.get_objects_iter()
-    # ------------------------------------------------------
-    def get_objects_iter(
+    # ---------- List-style endpoints: async iterator with pagination ----------
+
+    async def get_objects_iter(
         self,
         resource: str,
         params: Optional[Dict[str, Any]] = None,
         tenant: Optional[str] = None,
-    ) -> Iterable[Dict[str, Any]]:
-
-        resource_path = resource.replace("-", "_")
-        path = f"/api/{resource_path}"
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Async generator that yields ALL objects from Avi list endpoints.
+        Uses ?page=&page_size=&count for pagination.
+        Example resources:
+            - 'virtualservice-inventory'
+            - 'pool-inventory'
+            - 'serviceengine'
+            - 'serviceenginegroup-inventory'
+            - 'cloud-inventory'
+        """
+        path = f"/api/{resource}"  # e.g. /api/virtualservice-inventory
 
         headers: Dict[str, str] = {}
         if tenant:
             headers["X-Avi-Tenant"] = tenant
 
-        url: str = path
-        query = params or {}
+        base_params: Dict[str, Any] = dict(params or {})
+        base_params.setdefault("page_size", 200)
+
+        page = 1
+        total = None
+        seen = 0
 
         while True:
-            resp = self._get_with_relogin(url, params=query, headers=headers)
+            page_params = dict(base_params)
+            page_params["page"] = page
+
+            resp = await self._get_with_relogin(path, params=page_params, headers=headers)
             data = resp.json()
 
-            # Extract items
-            if isinstance(data, dict):
-                if "results" in data:
-                    items = data["results"]
-                elif "items" in data:
-                    items = data["items"]
-                else:
-                    # Single object endpoint
-                    items = [data]
-            elif isinstance(data, list):
-                items = data
-            else:
-                items = []
+            if not isinstance(data, dict):
+                break
 
-            for obj in items:
+            results = data.get("results") or data.get("items") or [data]
+            if not isinstance(results, list) or not results:
+                break
+
+            if total is None:
+                total = data.get("count")
+
+            for obj in results:
+                seen += 1
                 yield obj
 
-            # Pagination
-            next_url = None
-            if isinstance(data, dict):
-                next_url = data.get("next")
-
-            if not next_url:
+            if total is not None and seen >= total:
                 break
 
-            if next_url.startswith("http"):
-                url = next_url
+            page += 1
+
+    # ---------- Single-object endpoint helper ----------
+
+    async def get_json(
+        self,
+        resource: str,
+        params: Optional[Dict[str, Any]] = None,
+        tenant: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        For endpoints that return a single JSON dict, e.g.:
+            - 'licensing'
+            - 'licensing/ledger/details'
+            - 'systemconfiguration'
+            - 'cluster/runtime'
+        """
+        path = f"/api/{resource}"
+        headers: Dict[str, str] = {}
+        if tenant:
+            headers["X-Avi-Tenant"] = tenant
+
+        resp = await self._get_with_relogin(path, params=params, headers=headers)
+        return resp.json()
+
+    # ---------- Option-specific helpers ----------
+
+    async def fetch_virtualservice_inventory(self) -> List[Dict[str, Any]]:
+        return [
+            obj async for obj in self.get_objects_iter(
+                "virtualservice-inventory",
+                params={"include_name": True},
+            )
+        ]
+
+    async def fetch_pool_inventory(self) -> List[Dict[str, Any]]:
+        return [
+            obj async for obj in self.get_objects_iter(
+                "pool-inventory",
+                params={"include_name": True},
+            )
+        ]
+
+    async def fetch_serviceengine(self) -> List[Dict[str, Any]]:
+        return [
+            obj async for obj in self.get_objects_iter("serviceengine")
+        ]
+
+    async def fetch_serviceenginegroup_inventory(self) -> List[Dict[str, Any]]:
+        return [
+            obj async for obj in self.get_objects_iter("serviceenginegroup-inventory")
+        ]
+
+    async def fetch_cloud_inventory(self) -> List[Dict[str, Any]]:
+        return [
+            obj async for obj in self.get_objects_iter("cloud-inventory")
+        ]
+
+    async def fetch_licensing_ledger_details(self) -> Dict[str, Any]:
+        return await self.get_json("licensing/ledger/details")
+
+    async def fetch_licensing(self) -> Dict[str, Any]:
+        return await self.get_json("licensing")
+
+    async def fetch_systemconfiguration(self) -> Dict[str, Any]:
+        return await self.get_json("systemconfiguration")
+
+    async def fetch_cluster_runtime(self) -> Dict[str, Any]:
+        return await self.get_json("cluster/runtime")
+
+    # ---------- Optional: fetch multiple URLs from response ----------
+
+    async def fetch_many_urls(self, urls: List[str]) -> List[Any]:
+        """
+        Given a list of URLs (absolute or relative), fetch them concurrently.
+        You can use this for URLs found inside VS / pool JSON objects.
+        """
+        tasks = [self._get_with_relogin(url) for url in urls]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+        results: List[Any] = []
+        for r in responses:
+            if isinstance(r, Exception):
+                results.append({"error": str(r)})
             else:
-                url = next_url
+                try:
+                    results.append(r.json())
+                except Exception as e:
+                    results.append({"error": f"JSON decode failed: {e}"})
+        return results
 
-            query = {}
 
-++++++++++++++++++++++++++++++++++++++++++++++++++
+# ----------------- Per-Controller Orchestration -----------------
 
-client = httpx.Client(
-    base_url=f"https://{controller_ip}",
-    verify=False,
-    auth=None,             # IMPORTANT: Avi login uses cookies, not Basic Auth
-    headers={
-        "Accept": "application/json",
-        "Accept-Encoding": "application/json",
-        "X-Avi-Version": api_version,
-        "X-Avi-Tenant": tenant,
-    },
-    timeout=30.0,
-)
+async def run_for_controller(cfg: AviControllerConfig) -> Dict[str, Any]:
+    """
+    For a single controller:
+    - login
+    - concurrently fetch all required resources
+    - return a dict of all collected data
+    """
+    print(f"[{cfg.controller_ip}] Starting...")
 
-# Login first time
-avi_login(client, controller_ip, username, password)
+    async with AviAsyncClient(cfg) as api:
+        tasks = [
+            api.fetch_virtualservice_inventory(),
+            api.fetch_pool_inventory(),
+            api.fetch_serviceengine(),
+            api.fetch_serviceenginegroup_inventory(),
+            api.fetch_licensing_ledger_details(),
+            api.fetch_licensing(),
+            api.fetch_cloud_inventory(),
+            api.fetch_systemconfiguration(),
+            api.fetch_cluster_runtime(),
+        ]
 
-api = AviHttpClient(
-    client=client,
-    controller_ip=controller_ip,
-    username=username,
-    password=password
-)
+        (
+            vs_inv,
+            pool_inv,
+            se_list,
+            seg_inv,
+            lic_ledger,
+            lic,
+            cloud_inv,
+            syscfg,
+            cluster_rt,
+        ) = await asyncio.gather(*tasks, return_exceptions=False)
 
-+++++++++++++++++++++++++++++++++++++++++++++
-
-vs_inventory = await asyncio.to_thread(
-    lambda: list(
-        api.get_objects_iter(
-            "virtualservice-inventory",
-            params={"include_name": True},
-            tenant="admin"
+        print(
+            f"[{cfg.controller_ip}] Done. "
+            f"VS={len(vs_inv)}, Pools={len(pool_inv)}, SE={len(se_list)}, SEG={len(seg_inv)}"
         )
-    )
-)
+
+        return {
+            "controller": cfg.controller_ip,
+            "virtualservice_inventory": vs_inv,
+            "pool_inventory": pool_inv,
+            "serviceengine": se_list,
+            "serviceenginegroup_inventory": seg_inv,
+            "licensing_ledger_details": lic_ledger,
+            "licensing": lic,
+            "cloud_inventory": cloud_inv,
+            "systemconfiguration": syscfg,
+            "cluster_runtime": cluster_rt,
+        }
 
 
-++++++++++++++++++++++++++++++++++++++++++
+# ----------------- All Controllers Orchestration -----------------
 
-def get_objects_iter(
-    self,
-    resource: str,
-    params: Optional[Dict[str, Any]] = None,
-    tenant: Optional[str] = None,
-) -> Iterable[Dict[str, Any]]:
-    """
-    Generator that yields objects from Avi list endpoints, similar to ApiSession.get_objects_iter().
-    Handles pagination and auto re-login.
-    """
+async def main():
+    # TODO: fill in your real controller IPs and credentials
+    controllers: List[AviControllerConfig] = [
+        AviControllerConfig("10.0.0.1", "admin", "password", "22.1.6", "admin", verify=False),
+        AviControllerConfig("10.0.0.2", "admin", "password", "22.1.6", "admin", verify=False),
+        # ... add up to 10 controllers here ...
+    ]
 
-    # "virtualservice-inventory" -> "/api/virtualservice_inventory"
-    # "cluster/runtime"          -> "/api/cluster/runtime"
-    resource_path = resource.replace("-", "_")
-    path = f"/api/{resource_path}"
+    tasks = [run_for_controller(cfg) for cfg in controllers]
+    results = await asyncio.gather(*tasks, return_exceptions=False)
 
-    # Optional tenant override header
-    headers: Dict[str, str] = {}
-    if tenant:
-        headers["X-Avi-Tenant"] = tenant
+    # Here you could write to DB, CSV, etc.
+    for res in results:
+        print(
+            f"Controller {res['controller']} -> "
+            f"VS={len(res['virtualservice_inventory'])}, "
+            f"Pools={len(res['pool_inventory'])}"
+        )
 
-    query = params or {}
 
-    # ---- First request using the computed path ----
-    resp = self._get_with_relogin(path, params=query, headers=headers)
-
-    # Track last URL to avoid infinite loops if API returns same "next" forever
-    last_url: Optional[str] = None
-
-    while True:
-        data = resp.json()
-
-        # Normalize the items
-        if isinstance(data, dict):
-            if "results" in data and isinstance(data["results"], list):
-                items = data["results"]
-            elif "items" in data and isinstance(data["items"], list):
-                items = data["items"]
-            else:
-                # Single-object endpoint, still yield it
-                items = [data]
-        elif isinstance(data, list):
-            items = data
-        else:
-            items = []
-
-        for obj in items:
-            yield obj
-
-        # ---- Pagination handling ----
-        next_url = None
-        if isinstance(data, dict):
-            next_url = data.get("next")
-
-        # No more pages -> break
-        if not next_url:
-            break
-
-        # Normalize relative vs absolute "next" URLs
-        # If you have client.base_url set (e.g. https://169.193.169.103),
-        # httpx can handle relative paths directly.
-        if isinstance(next_url, str):
-            # Guard against buggy APIs that keep returning the same "next" URL
-            if last_url is not None and next_url == last_url:
-                # Prevent infinite loop
-                break
-
-            last_url = next_url
-        else:
-            break  # unexpected type, stop to avoid infinite loop
-
-        # For subsequent pages, we don't need extra params; they’re in next_url
-        resp = self._get_with_relogin(next_url, params=None, headers=headers)
-
+if __name__ == "__main__":
+    asyncio.run(main())
