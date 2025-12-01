@@ -346,49 +346,69 @@ if __name__ == "__main__":
 
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-from cryptography.hazmat.primitives.serialization import pkcs12
 import ssl
-import httpx
+import tempfile
+import os
 
-def create_ssl_context(p12_path, p12_password):
+from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
+from cryptography.hazmat.primitives import serialization
+
+
+def create_ssl_context(p12_path: str, p12_password: str | None) -> ssl.SSLContext:
+    # 1. Read PKCS#12 file
     with open(p12_path, "rb") as f:
         p12_data = f.read()
 
     private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(
         p12_data,
-        p12_password.encode() if p12_password else None
+        p12_password.encode() if p12_password else None,
     )
 
-    ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    if private_key is None or certificate is None:
+        raise ValueError("PKCS#12 file does not contain a private key and certificate")
 
-    # Load client cert & private key
-    ssl_ctx.load_cert_chain(
-        certfile=None,  # not used
-        keyfile=None,   # not used
-        password=None
+    # 2. Convert key & cert to PEM bytes
+    cert_pem = certificate.public_bytes(Encoding.PEM)
+    key_pem = private_key.private_bytes(
+        Encoding.PEM,
+        PrivateFormat.TraditionalOpenSSL,
+        NoEncryption(),
     )
 
-    # But we must serialize them to PEM first
-    from cryptography.hazmat.primitives import serialization
+    # 3. Build SSLContext
+    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
 
-    cert_pem = certificate.public_bytes(serialization.Encoding.PEM)
-    key_pem  = private_key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.TraditionalOpenSSL,
-        serialization.NoEncryption()
-    )
+    # 4. Write cert & key to temporary files (needed for load_cert_chain)
+    cert_tmp = tempfile.NamedTemporaryFile("wb", delete=False)
+    key_tmp = tempfile.NamedTemporaryFile("wb", delete=False)
+    try:
+        cert_tmp.write(cert_pem)
+        cert_tmp.flush()
+        key_tmp.write(key_pem)
+        key_tmp.flush()
+        cert_tmp.close()
+        key_tmp.close()
 
-    ssl_ctx.load_cert_chain(
-        certfile=ssl.MemoryBIO(cert_pem),
-        keyfile=ssl.MemoryBIO(key_pem)
-    )
+        ctx.load_cert_chain(certfile=cert_tmp.name, keyfile=key_tmp.name)
 
-    # Load CA chain (if exists)
+    finally:
+        # Clean up temp files
+        try:
+            os.remove(cert_tmp.name)
+        except OSError:
+            pass
+        try:
+            os.remove(key_tmp.name)
+        except OSError:
+            pass
+
+    # 5. Load CA chain (if present) as trusted CAs
     if additional_certs:
-        for cert in additional_certs:
-            ssl_ctx.load_verify_locations(
-                cadata=cert.public_bytes(serialization.Encoding.PEM).decode()
-            )
+        ca_pem = b"".join(cert.public_bytes(Encoding.PEM) for cert in additional_certs)
+        ctx.load_verify_locations(cadata=ca_pem.decode())
 
-    return ssl_ctx
+    # (Optional) enforce good TLS defaults
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
 
+    return ctx
