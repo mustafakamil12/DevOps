@@ -343,3 +343,52 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+from cryptography.hazmat.primitives.serialization import pkcs12
+import ssl
+import httpx
+
+def create_ssl_context(p12_path, p12_password):
+    with open(p12_path, "rb") as f:
+        p12_data = f.read()
+
+    private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(
+        p12_data,
+        p12_password.encode() if p12_password else None
+    )
+
+    ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
+    # Load client cert & private key
+    ssl_ctx.load_cert_chain(
+        certfile=None,  # not used
+        keyfile=None,   # not used
+        password=None
+    )
+
+    # But we must serialize them to PEM first
+    from cryptography.hazmat.primitives import serialization
+
+    cert_pem = certificate.public_bytes(serialization.Encoding.PEM)
+    key_pem  = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption()
+    )
+
+    ssl_ctx.load_cert_chain(
+        certfile=ssl.MemoryBIO(cert_pem),
+        keyfile=ssl.MemoryBIO(key_pem)
+    )
+
+    # Load CA chain (if exists)
+    if additional_certs:
+        for cert in additional_certs:
+            ssl_ctx.load_verify_locations(
+                cadata=cert.public_bytes(serialization.Encoding.PEM).decode()
+            )
+
+    return ssl_ctx
+
