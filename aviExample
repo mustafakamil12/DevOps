@@ -1,3 +1,9 @@
+import asyncio
+import random
+import logging
+import httpx
+
+
 async def apiRequester(
     subnet_complex,
     headers,
@@ -6,95 +12,99 @@ async def apiRequester(
     undef_subnets_cidr_comp,
     semaphore,
     params=None,
+    max_retries=5,           # how many times to retry
+    base_delay=0.3           # base delay (exponential backoff)
 ):
     subnet_cidr, subnet = subnet_complex
 
     url = f"https://sit.b2b.cti.otservices.citigroup.net/dns/v1/subnet/{subnet}?pageSize=4094&page=1"
 
-    logging.debug(f"semaphore: {semaphore}")
-
     async with semaphore:
-        # Small jitter
+        # Network jitter
         await asyncio.sleep(random.uniform(0.05, 0.2))
 
-        try:
-            response = await client.get(
-                url,
-                headers=headers,
-                params=params,
-            )
+        attempt = 0
 
-            await asyncio.sleep(random.uniform(0.05, 0.2))
+        while attempt <= max_retries:
+            try:
+                response = await client.get(
+                    url,
+                    headers=headers,
+                    params=params,
+                )
 
-            if response.status_code == 429:
-                logging.debug(f"[{subnet}] 429 Too Many Requests.")
-                # Later: implement retry/backoff logic here if needed
+                # Small jitter after response
+                await asyncio.sleep(random.uniform(0.05, 0.2))
+
+                # ----------------------------
+                # Retry: 429 Too Many Requests
+                # ----------------------------
+                if response.status_code == 429:
+                    wait = base_delay * (2 ** attempt) + random.uniform(0.05, 0.25)
+                    logging.warning(f"[{subnet}] 429 Too Many Requests. Retrying in {wait:.2f}s...")
+                    await asyncio.sleep(wait)
+                    attempt += 1
+                    continue
+
+                # ----------------------------
+                # Retry: Temporary 4xx (optional)
+                # e.g., 408 Request Timeout, 409 Conflict, 425 Too Early
+                # ----------------------------
+                if response.status_code in (408, 409, 425):
+                    wait = base_delay * (2 ** attempt) + random.uniform(0.05, 0.25)
+                    logging.warning(f"[{subnet}] Temp 4xx {response.status_code}. Retrying in {wait:.2f}s...")
+                    await asyncio.sleep(wait)
+                    attempt += 1
+                    continue
+
+                # ----------------------------
+                # Retry 5xx Server Errors
+                # ----------------------------
+                if 500 <= response.status_code <= 599:
+                    logging.warning(f"[{subnet}] Server error {response.status_code}. Retrying...")
+                    wait = base_delay * (2 ** attempt) + random.uniform(0.05, 0.25)
+                    await asyncio.sleep(wait)
+                    attempt += 1
+                    continue
+
+                # ----------------------------
+                # Handle success
+                # ----------------------------
+                if response.status_code == 200:
+                    response_json = response.json()
+
+                    for address in response_json.get("addresses", []):
+                        address["subnet_cidr"] = subnet_cidr
+
+                    return response_json.get("addresses", None)
+
+                # ----------------------------
+                # Other 4xx — don't retry
+                # ----------------------------
+                if 400 <= response.status_code < 500:
+                    logging.warning(
+                        f"[{subnet}] Non-retry 4xx ({response.status_code}). Skipping."
+                    )
+                    return None
+
+                # ----------------------------
+                # Unexpected status
+                # ----------------------------
+                logging.error(f"[{subnet}] Unexpected status {response.status_code}.")
                 return None
 
-            if response.status_code >= 500:
-                logging.debug(f"Error: [{subnet}] is undefined!")
-                undef_subnets.append(subnet)
-                undef_subnets_cidr_comp.append(subnet_complex)
-                return None
+            except httpx.RequestError as e:
+                # Network-level issue, retry
+                wait = base_delay * (2 ** attempt) + random.uniform(0.05, 0.25)
+                logging.error(f"[{subnet}] Network error: {e}. Retrying in {wait:.2f}s...")
+                await asyncio.sleep(wait)
+                attempt += 1
+                continue
 
-            if response.status_code == 200:
-                response_json = response.json()
-
-                for address in response_json.get("addresses", []):
-                    address["subnet_cidr"] = subnet_cidr
-
-                return response_json.get("addresses", None)
-
-            # For other 4xx, just log and return None
-            logging.warning(f"[{subnet}] Unexpected status code: {response.status_code}")
-            return None
-
-        except httpx.HTTPError as e:
-            await asyncio.sleep(random.uniform(0.05, 0.2))
-            logging.error(f"[{subnet}] API request failed: {e}")
-            return None
-
-
-======================================
-
-async def api_controller(
-    subnets,
-    headers,
-    pkcs12_filename,
-    pkcs12_passphrase,
-    undef_subnets,
-    undef_subnets_cidr_comp,
-    max_concurrent,
-    params=None,
-):
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    # Create SSL context once
-    ssl_context = create_ssl_context(pkcs12_filename, pkcs12_passphrase)
-
-    # Create one shared AsyncClient
-    async with httpx.AsyncClient(
-        verify=ssl_context,
-        timeout=httpx.Timeout(30.0),
-        http2=True,        # if the server supports it, this can help
-        limits=httpx.Limits(
-            max_connections=100,          # tune based on your infra
-            max_keepalive_connections=20, # keepalive pool
-        ),
-    ) as client:
-        tasks = [
-            apiRequester(
-                subnet_complex=subnet,
-                headers=headers,
-                client=client,
-                undef_subnets=undef_subnets,
-                undef_subnets_cidr_comp=undef_subnets_cidr_comp,
-                semaphore=semaphore,
-                params=params,
-            )
-            for subnet in subnets
-        ]
-
-        results = await asyncio.gather(*tasks)
-        results = [res for res in results if res is not None]
-        return results
+        # ----------------------------
+        # Retries exhausted
+        # ----------------------------
+        logging.error(f"[{subnet}] Failed after {max_retries} retries.")
+        undef_subnets.append(subnet)
+        undef_subnets_cidr_comp.append(subnet_complex)
+        return None
