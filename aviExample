@@ -1,414 +1,100 @@
-import asyncio
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, AsyncIterator
-
-import httpx
-
-
-# ----------------- Config Model -----------------
-
-@dataclass
-class AviControllerConfig:
-    controller_ip: str
-    username: str
-    password: str
-    api_version: str
-    tenant: str = "admin"
-    verify: bool = False
-
-
-# ----------------- Async Login -----------------
-
-async def avi_login_async(
+async def apiRequester(
+    subnet_complex,
+    headers,
     client: httpx.AsyncClient,
-    controller_ip: str,
-    username: str,
-    password: str
-) -> bool:
-    """Login to Avi controller and store cookies in client."""
-    login_url = f"https://{controller_ip}/login"
-    payload = {"username": username, "password": password}
+    undef_subnets,
+    undef_subnets_cidr_comp,
+    semaphore,
+    params=None,
+):
+    subnet_cidr, subnet = subnet_complex
 
-    try:
-        resp = await client.post(login_url, json=payload)
-        if resp.status_code == 200:
-            print(f"[{controller_ip}] Login successful.")
-            return True
-        else:
-            print(f"[{controller_ip}] Login failed {resp.status_code}: {resp.text}")
-            return False
-    except httpx.RequestError as e:
-        print(f"[{controller_ip}] Login error: {e}")
-        return False
+    url = f"https://sit.b2b.cti.otservices.citigroup.net/dns/v1/subnet/{subnet}?pageSize=4094&page=1"
 
+    logging.debug(f"semaphore: {semaphore}")
 
-# ----------------- Avi Async Client Wrapper -----------------
+    async with semaphore:
+        # Small jitter
+        await asyncio.sleep(random.uniform(0.05, 0.2))
 
-class AviAsyncClient:
-    """
-    Async Avi API client using httpx.AsyncClient.
-    - One instance per controller.
-    - Handles login + re-login.
-    - Provides get_objects_iter() for list endpoints.
-    - Provides get_json() for single-object endpoints.
-    """
-
-    def __init__(self, cfg: AviControllerConfig):
-        self.cfg = cfg
-        self.client: Optional[httpx.AsyncClient] = None
-
-    async def __aenter__(self) -> "AviAsyncClient":
-        self.client = httpx.AsyncClient(
-            base_url=f"https://{self.cfg.controller_ip}",
-            verify=self.cfg.verify,
-            headers={
-                "Accept": "application/json",
-                "Accept-Encoding": "application/json",
-                "X-Avi-Version": self.cfg.api_version,
-                "X-Avi-Tenant": self.cfg.tenant,
-            },
-            timeout=30.0,
-            limits=httpx.Limits(
-                max_connections=50,
-                max_keepalive_connections=20,
-            ),
-            http2=False,  # set to True if controller supports HTTP/2
-        )
-
-        ok = await avi_login_async(
-            self.client,
-            self.cfg.controller_ip,
-            self.cfg.username,
-            self.cfg.password,
-        )
-        if not ok:
-            raise RuntimeError(f"Login failed for {self.cfg.controller_ip}")
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        if self.client:
-            await self.client.aclose()
-
-    # ---------- Internal helper: GET with auto re-login ----------
-
-    async def _get_with_relogin(
-        self,
-        url_or_path: str,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> httpx.Response:
-        assert self.client is not None
-        resp = await self.client.get(url_or_path, params=params, headers=headers)
-
-        # Session expired? Re-login once and retry
-        if resp.status_code in (401, 419) or "Invalid session" in resp.text:
-            print(f"[{self.cfg.controller_ip}] Session expired → re-login...")
-            ok = await avi_login_async(
-                self.client,
-                self.cfg.controller_ip,
-                self.cfg.username,
-                self.cfg.password,
+        try:
+            response = await client.get(
+                url,
+                headers=headers,
+                params=params,
             )
-            if not ok:
-                raise RuntimeError(f"Re-login failed for {self.cfg.controller_ip}")
 
-            resp = await self.client.get(url_or_path, params=params, headers=headers)
+            await asyncio.sleep(random.uniform(0.05, 0.2))
 
-        resp.raise_for_status()
-        return resp
+            if response.status_code == 429:
+                logging.debug(f"[{subnet}] 429 Too Many Requests.")
+                # Later: implement retry/backoff logic here if needed
+                return None
 
-    # ---------- List-style endpoints: async iterator with pagination ----------
+            if response.status_code >= 500:
+                logging.debug(f"Error: [{subnet}] is undefined!")
+                undef_subnets.append(subnet)
+                undef_subnets_cidr_comp.append(subnet_complex)
+                return None
 
-    async def get_objects_iter(
-        self,
-        resource: str,
-        params: Optional[Dict[str, Any]] = None,
-        tenant: Optional[str] = None,
-    ) -> AsyncIterator[Dict[str, Any]]:
-        """
-        Async generator that yields ALL objects from Avi list endpoints.
-        Uses ?page=&page_size=&count for pagination.
-        Example resources:
-            - 'virtualservice-inventory'
-            - 'pool-inventory'
-            - 'serviceengine'
-            - 'serviceenginegroup-inventory'
-            - 'cloud-inventory'
-        """
-        path = f"/api/{resource}"  # e.g. /api/virtualservice-inventory
+            if response.status_code == 200:
+                response_json = response.json()
 
-        headers: Dict[str, str] = {}
-        if tenant:
-            headers["X-Avi-Tenant"] = tenant
+                for address in response_json.get("addresses", []):
+                    address["subnet_cidr"] = subnet_cidr
 
-        base_params: Dict[str, Any] = dict(params or {})
-        base_params.setdefault("page_size", 200)
+                return response_json.get("addresses", None)
 
-        page = 1
-        total = None
-        seen = 0
+            # For other 4xx, just log and return None
+            logging.warning(f"[{subnet}] Unexpected status code: {response.status_code}")
+            return None
 
-        while True:
-            page_params = dict(base_params)
-            page_params["page"] = page
-
-            resp = await self._get_with_relogin(path, params=page_params, headers=headers)
-            data = resp.json()
-
-            if not isinstance(data, dict):
-                break
-
-            results = data.get("results") or data.get("items") or [data]
-            if not isinstance(results, list) or not results:
-                break
-
-            if total is None:
-                total = data.get("count")
-
-            for obj in results:
-                seen += 1
-                yield obj
-
-            if total is not None and seen >= total:
-                break
-
-            page += 1
-
-    # ---------- Single-object endpoint helper ----------
-
-    async def get_json(
-        self,
-        resource: str,
-        params: Optional[Dict[str, Any]] = None,
-        tenant: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        For endpoints that return a single JSON dict, e.g.:
-            - 'licensing'
-            - 'licensing/ledger/details'
-            - 'systemconfiguration'
-            - 'cluster/runtime'
-        """
-        path = f"/api/{resource}"
-        headers: Dict[str, str] = {}
-        if tenant:
-            headers["X-Avi-Tenant"] = tenant
-
-        resp = await self._get_with_relogin(path, params=params, headers=headers)
-        return resp.json()
-
-    # ---------- Option-specific helpers ----------
-
-    async def fetch_virtualservice_inventory(self) -> List[Dict[str, Any]]:
-        return [
-            obj async for obj in self.get_objects_iter(
-                "virtualservice-inventory",
-                params={"include_name": True},
-            )
-        ]
-
-    async def fetch_pool_inventory(self) -> List[Dict[str, Any]]:
-        return [
-            obj async for obj in self.get_objects_iter(
-                "pool-inventory",
-                params={"include_name": True},
-            )
-        ]
-
-    async def fetch_serviceengine(self) -> List[Dict[str, Any]]:
-        return [
-            obj async for obj in self.get_objects_iter("serviceengine")
-        ]
-
-    async def fetch_serviceenginegroup_inventory(self) -> List[Dict[str, Any]]:
-        return [
-            obj async for obj in self.get_objects_iter("serviceenginegroup-inventory")
-        ]
-
-    async def fetch_cloud_inventory(self) -> List[Dict[str, Any]]:
-        return [
-            obj async for obj in self.get_objects_iter("cloud-inventory")
-        ]
-
-    async def fetch_licensing_ledger_details(self) -> Dict[str, Any]:
-        return await self.get_json("licensing/ledger/details")
-
-    async def fetch_licensing(self) -> Dict[str, Any]:
-        return await self.get_json("licensing")
-
-    async def fetch_systemconfiguration(self) -> Dict[str, Any]:
-        return await self.get_json("systemconfiguration")
-
-    async def fetch_cluster_runtime(self) -> Dict[str, Any]:
-        return await self.get_json("cluster/runtime")
-
-    # ---------- Optional: fetch multiple URLs from response ----------
-
-    async def fetch_many_urls(self, urls: List[str]) -> List[Any]:
-        """
-        Given a list of URLs (absolute or relative), fetch them concurrently.
-        You can use this for URLs found inside VS / pool JSON objects.
-        """
-        tasks = [self._get_with_relogin(url) for url in urls]
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
-
-        results: List[Any] = []
-        for r in responses:
-            if isinstance(r, Exception):
-                results.append({"error": str(r)})
-            else:
-                try:
-                    results.append(r.json())
-                except Exception as e:
-                    results.append({"error": f"JSON decode failed: {e}"})
-        return results
+        except httpx.HTTPError as e:
+            await asyncio.sleep(random.uniform(0.05, 0.2))
+            logging.error(f"[{subnet}] API request failed: {e}")
+            return None
 
 
-# ----------------- Per-Controller Orchestration -----------------
+======================================
 
-async def run_for_controller(cfg: AviControllerConfig) -> Dict[str, Any]:
-    """
-    For a single controller:
-    - login
-    - concurrently fetch all required resources
-    - return a dict of all collected data
-    """
-    print(f"[{cfg.controller_ip}] Starting...")
+async def api_controller(
+    subnets,
+    headers,
+    pkcs12_filename,
+    pkcs12_passphrase,
+    undef_subnets,
+    undef_subnets_cidr_comp,
+    max_concurrent,
+    params=None,
+):
+    semaphore = asyncio.Semaphore(max_concurrent)
 
-    async with AviAsyncClient(cfg) as api:
+    # Create SSL context once
+    ssl_context = create_ssl_context(pkcs12_filename, pkcs12_passphrase)
+
+    # Create one shared AsyncClient
+    async with httpx.AsyncClient(
+        verify=ssl_context,
+        timeout=httpx.Timeout(30.0),
+        http2=True,        # if the server supports it, this can help
+        limits=httpx.Limits(
+            max_connections=100,          # tune based on your infra
+            max_keepalive_connections=20, # keepalive pool
+        ),
+    ) as client:
         tasks = [
-            api.fetch_virtualservice_inventory(),
-            api.fetch_pool_inventory(),
-            api.fetch_serviceengine(),
-            api.fetch_serviceenginegroup_inventory(),
-            api.fetch_licensing_ledger_details(),
-            api.fetch_licensing(),
-            api.fetch_cloud_inventory(),
-            api.fetch_systemconfiguration(),
-            api.fetch_cluster_runtime(),
+            apiRequester(
+                subnet_complex=subnet,
+                headers=headers,
+                client=client,
+                undef_subnets=undef_subnets,
+                undef_subnets_cidr_comp=undef_subnets_cidr_comp,
+                semaphore=semaphore,
+                params=params,
+            )
+            for subnet in subnets
         ]
 
-        (
-            vs_inv,
-            pool_inv,
-            se_list,
-            seg_inv,
-            lic_ledger,
-            lic,
-            cloud_inv,
-            syscfg,
-            cluster_rt,
-        ) = await asyncio.gather(*tasks, return_exceptions=False)
-
-        print(
-            f"[{cfg.controller_ip}] Done. "
-            f"VS={len(vs_inv)}, Pools={len(pool_inv)}, SE={len(se_list)}, SEG={len(seg_inv)}"
-        )
-
-        return {
-            "controller": cfg.controller_ip,
-            "virtualservice_inventory": vs_inv,
-            "pool_inventory": pool_inv,
-            "serviceengine": se_list,
-            "serviceenginegroup_inventory": seg_inv,
-            "licensing_ledger_details": lic_ledger,
-            "licensing": lic,
-            "cloud_inventory": cloud_inv,
-            "systemconfiguration": syscfg,
-            "cluster_runtime": cluster_rt,
-        }
-
-
-# ----------------- All Controllers Orchestration -----------------
-
-async def main():
-    # TODO: fill in your real controller IPs and credentials
-    controllers: List[AviControllerConfig] = [
-        AviControllerConfig("10.0.0.1", "admin", "password", "22.1.6", "admin", verify=False),
-        AviControllerConfig("10.0.0.2", "admin", "password", "22.1.6", "admin", verify=False),
-        # ... add up to 10 controllers here ...
-    ]
-
-    tasks = [run_for_controller(cfg) for cfg in controllers]
-    results = await asyncio.gather(*tasks, return_exceptions=False)
-
-    # Here you could write to DB, CSV, etc.
-    for res in results:
-        print(
-            f"Controller {res['controller']} -> "
-            f"VS={len(res['virtualservice_inventory'])}, "
-            f"Pools={len(res['pool_inventory'])}"
-        )
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-import ssl
-import tempfile
-import os
-
-from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
-from cryptography.hazmat.primitives import serialization
-
-
-def create_ssl_context(p12_path: str, p12_password: str | None) -> ssl.SSLContext:
-    # 1. Read PKCS#12 file
-    with open(p12_path, "rb") as f:
-        p12_data = f.read()
-
-    private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(
-        p12_data,
-        p12_password.encode() if p12_password else None,
-    )
-
-    if private_key is None or certificate is None:
-        raise ValueError("PKCS#12 file does not contain a private key and certificate")
-
-    # 2. Convert key & cert to PEM bytes
-    cert_pem = certificate.public_bytes(Encoding.PEM)
-    key_pem = private_key.private_bytes(
-        Encoding.PEM,
-        PrivateFormat.TraditionalOpenSSL,
-        NoEncryption(),
-    )
-
-    # 3. Build SSLContext
-    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-
-    # 4. Write cert & key to temporary files (needed for load_cert_chain)
-    cert_tmp = tempfile.NamedTemporaryFile("wb", delete=False)
-    key_tmp = tempfile.NamedTemporaryFile("wb", delete=False)
-    try:
-        cert_tmp.write(cert_pem)
-        cert_tmp.flush()
-        key_tmp.write(key_pem)
-        key_tmp.flush()
-        cert_tmp.close()
-        key_tmp.close()
-
-        ctx.load_cert_chain(certfile=cert_tmp.name, keyfile=key_tmp.name)
-
-    finally:
-        # Clean up temp files
-        try:
-            os.remove(cert_tmp.name)
-        except OSError:
-            pass
-        try:
-            os.remove(key_tmp.name)
-        except OSError:
-            pass
-
-    # 5. Load CA chain (if present) as trusted CAs
-    if additional_certs:
-        ca_pem = b"".join(cert.public_bytes(Encoding.PEM) for cert in additional_certs)
-        ctx.load_verify_locations(cadata=ca_pem.decode())
-
-    # (Optional) enforce good TLS defaults
-    ctx.check_hostname = True
-    ctx.verify_mode = ssl.CERT_REQUIRED
-
-    return ctx
+        results = await asyncio.gather(*tasks)
+        results = [res for res in results if res is not None]
+        return results
