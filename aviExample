@@ -1,110 +1,98 @@
-import asyncio
-import random
-import logging
-import httpx
+def simple_deep_diff(t1, t2, key_name=None):
+    """
+    A simple DeepDiff-like function.
 
+    - Supports dicts, lists/tuples, primitive values.
+    - If key_name is provided and both sides are a list of dicts
+      containing that key, it will compare them by that key instead of by index.
+      Example: key_name="appName" → paths like "ghost['b']".
+    """
+    diff = {
+        "values_changed": {},
+        "dictionary_item_added": [],
+        "dictionary_item_removed": [],
+        "iterable_item_added": [],
+        "iterable_item_removed": [],
+    }
 
-async def apiRequester(
-    subnet_complex,
-    headers,
-    client: httpx.AsyncClient,
-    undef_subnets,
-    undef_subnets_cidr_comp,
-    semaphore,
-    params=None,
-    max_retries=5,           # how many times to retry
-    base_delay=0.3           # base delay (exponential backoff)
-):
-    subnet_cidr, subnet = subnet_complex
+    def make_path(parent, key):
+        """Build a path string, replacing 'root' with the top-level key."""
+        if parent in ("root", "", None):
+            # Top level: just the appName or key itself
+            return str(key)
+        else:
+            return f"{parent}['{key}']"
 
-    url = f"https://sit.b2b.cti.otservices.citigroup.net/dns/v1/subnet/{subnet}?pageSize=4094&page=1"
+    def _diff(v1, v2, path):
+        # Case 1: both are dicts
+        if isinstance(v1, dict) and isinstance(v2, dict):
+            keys1 = set(v1.keys())
+            keys2 = set(v2.keys())
 
-    async with semaphore:
-        # Network jitter
-        await asyncio.sleep(random.uniform(0.05, 0.2))
+            # Added keys
+            for k in sorted(keys2 - keys1):
+                diff["dictionary_item_added"].append(make_path(path, k))
 
-        attempt = 0
+            # Removed keys
+            for k in sorted(keys1 - keys2):
+                diff["dictionary_item_removed"].append(make_path(path, k))
 
-        while attempt <= max_retries:
-            try:
-                response = await client.get(
-                    url,
-                    headers=headers,
-                    params=params,
-                )
+            # Keys in both → recurse
+            for k in sorted(keys1 & keys2):
+                _diff(v1[k], v2[k], make_path(path, k))
 
-                # Small jitter after response
-                await asyncio.sleep(random.uniform(0.05, 0.2))
+        # Case 2: both are lists/tuples
+        elif isinstance(v1, (list, tuple)) and isinstance(v2, (list, tuple)):
+            # Special case: list of dicts keyed by key_name (e.g. appName)
+            if (
+                key_name
+                and all(isinstance(x, dict) and key_name in x for x in v1)
+                and all(isinstance(x, dict) and key_name in x for x in v2)
+            ):
+                index1 = {d[key_name]: d for d in v1}
+                index2 = {d[key_name]: d for d in v2}
 
-                # ----------------------------
-                # Retry: 429 Too Many Requests
-                # ----------------------------
-                if response.status_code == 429:
-                    wait = base_delay * (2 ** attempt) + random.uniform(0.05, 0.25)
-                    logging.warning(f"[{subnet}] 429 Too Many Requests. Retrying in {wait:.2f}s...")
-                    await asyncio.sleep(wait)
-                    attempt += 1
-                    continue
+                k1 = set(index1.keys())
+                k2 = set(index2.keys())
 
-                # ----------------------------
-                # Retry: Temporary 4xx (optional)
-                # e.g., 408 Request Timeout, 409 Conflict, 425 Too Early
-                # ----------------------------
-                if response.status_code in (408, 409, 425):
-                    wait = base_delay * (2 ** attempt) + random.uniform(0.05, 0.25)
-                    logging.warning(f"[{subnet}] Temp 4xx {response.status_code}. Retrying in {wait:.2f}s...")
-                    await asyncio.sleep(wait)
-                    attempt += 1
-                    continue
+                # New appNames
+                for k in sorted(k2 - k1):
+                    diff["dictionary_item_added"].append(make_path(path, k))
 
-                # ----------------------------
-                # Retry 5xx Server Errors
-                # ----------------------------
-                if 500 <= response.status_code <= 599:
-                    logging.warning(f"[{subnet}] Server error {response.status_code}. Retrying...")
-                    wait = base_delay * (2 ** attempt) + random.uniform(0.05, 0.25)
-                    await asyncio.sleep(wait)
-                    attempt += 1
-                    continue
+                # Removed appNames
+                for k in sorted(k1 - k2):
+                    diff["dictionary_item_removed"].append(make_path(path, k))
 
-                # ----------------------------
-                # Handle success
-                # ----------------------------
-                if response.status_code == 200:
-                    response_json = response.json()
+                # Common appNames → recurse into each dict
+                for k in sorted(k1 & k2):
+                    _diff(index1[k], index2[k], make_path(path, k))
+            else:
+                # Normal positional list comparison
+                len1, len2 = len(v1), len(v2)
+                max_len = max(len1, len2)
 
-                    for address in response_json.get("addresses", []):
-                        address["subnet_cidr"] = subnet_cidr
+                for i in range(max_len):
+                    if path:
+                        item_path = f"{path}[{i}]"
+                    else:
+                        item_path = f"[{i}]"
 
-                    return response_json.get("addresses", None)
+                    if i >= len1:
+                        diff["iterable_item_added"].append(item_path)
+                    elif i >= len2:
+                        diff["iterable_item_removed"].append(item_path)
+                    else:
+                        _diff(v1[i], v2[i], item_path)
 
-                # ----------------------------
-                # Other 4xx — don't retry
-                # ----------------------------
-                if 400 <= response.status_code < 500:
-                    logging.warning(
-                        f"[{subnet}] Non-retry 4xx ({response.status_code}). Skipping."
-                    )
-                    return None
+        # Case 3: base / primitive values
+        else:
+            if v1 != v2:
+                diff["values_changed"][path] = {
+                    "old_value": v1,
+                    "new_value": v2,
+                }
 
-                # ----------------------------
-                # Unexpected status
-                # ----------------------------
-                logging.error(f"[{subnet}] Unexpected status {response.status_code}.")
-                return None
+    _diff(t1, t2, "root")
 
-            except httpx.RequestError as e:
-                # Network-level issue, retry
-                wait = base_delay * (2 ** attempt) + random.uniform(0.05, 0.25)
-                logging.error(f"[{subnet}] Network error: {e}. Retrying in {wait:.2f}s...")
-                await asyncio.sleep(wait)
-                attempt += 1
-                continue
-
-        # ----------------------------
-        # Retries exhausted
-        # ----------------------------
-        logging.error(f"[{subnet}] Failed after {max_retries} retries.")
-        undef_subnets.append(subnet)
-        undef_subnets_cidr_comp.append(subnet_complex)
-        return None
+    # Clean empty sections
+    return {k: v for k, v in diff.items() if v}
