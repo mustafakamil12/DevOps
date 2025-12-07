@@ -1,11 +1,13 @@
-def simple_deep_diff(t1, t2, key_name=None):
+def simple_deep_diff(t1, t2, key_name=None, ignore_type_in_groups=None):
     """
     A simple DeepDiff-like function.
 
     - Supports dicts, lists/tuples, primitive values.
-    - If key_name is provided and both sides are a list of dicts
-      containing that key, it will compare them by that key instead of by index.
-      Example: key_name="appName" → paths like "ghost['b']".
+    - key_name: if provided and both sides are list of dicts with that key, use it
+      to match items (e.g. appName -> ghost['b'] instead of root[0]['b']).
+    - ignore_type_in_groups: list of tuples of types. Values whose types fall into
+      the same group will be compared using a relaxed rule (e.g. by string form).
+      Example: ignore_type_in_groups=[(None, str, int, bool)]
     """
     diff = {
         "values_changed": {},
@@ -15,10 +17,53 @@ def simple_deep_diff(t1, t2, key_name=None):
         "iterable_item_removed": [],
     }
 
+    # Normalize group definition: (None, str, int) -> (type(None), str, int)
+    def _normalize_groups(groups):
+        if not groups:
+            return []
+        norm = []
+        for group in groups:
+            norm_group = []
+            for g in group:
+                if g is None:
+                    norm_group.append(type(None))
+                else:
+                    norm_group.append(g)
+            norm.append(tuple(norm_group))
+        return norm
+
+    normalized_groups = _normalize_groups(ignore_type_in_groups)
+
+    def in_same_ignore_group(v1, v2):
+        """Return True if type(v1) and type(v2) are in the same ignore group."""
+        if not normalized_groups:
+            return False
+        t1, t2 = type(v1), type(v2)
+        for group in normalized_groups:
+            if t1 in group and t2 in group:
+                return True
+        return False
+
+    def values_equal(v1, v2):
+        """
+        Equality logic with optional ignore_type_in_groups.
+
+        - If v1 == v2 normally, they are equal.
+        - Else, if both types are in the same ignore group, compare by str().
+        """
+        if v1 == v2:
+            return True
+
+        if in_same_ignore_group(v1, v2):
+            # Relaxed comparison: compare normalized string representations.
+            # You can customize this (e.g. cast to int/float) if you like.
+            return str(v1) == str(v2)
+
+        return False
+
     def make_path(parent, key):
-        """Build a path string, replacing 'root' with the top-level key."""
+        """Build a path string; top level uses the key/appName directly."""
         if parent in ("root", "", None):
-            # Top level: just the appName or key itself
             return str(key)
         else:
             return f"{parent}['{key}']"
@@ -86,7 +131,7 @@ def simple_deep_diff(t1, t2, key_name=None):
 
         # Case 3: base / primitive values
         else:
-            if v1 != v2:
+            if not values_equal(v1, v2):
                 diff["values_changed"][path] = {
                     "old_value": v1,
                     "new_value": v2,
@@ -94,5 +139,5 @@ def simple_deep_diff(t1, t2, key_name=None):
 
     _diff(t1, t2, "root")
 
-    # Clean empty sections
+    # Clean out empty sections
     return {k: v for k, v in diff.items() if v}
