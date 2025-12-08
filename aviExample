@@ -151,22 +151,39 @@ def format_diff_for_email(data_dict):
     lines = []
 
     for full_key, change in changes.items():
-        # Extract the last ['...'] part → e.g. "Freq_Daily_at"
+        # Extract last field name (Freq_Daily_at, UpdateDate, Version)
         matches = re.findall(r"\['([^']+)'\]", full_key)
-        key_name = matches[-1] if matches else full_key  # fallback to full key
+        key_name = matches[-1] if matches else full_key
 
+        # Extract controller string inside content[' ... ']
+        controller_match = re.search(
+            r"content\[\s*'([^']+)'\s*\]", full_key
+        )
+        controller_name = None
+
+        if controller_match:
+            full_path = controller_match.group(1)  # scheduleController.vmware_compatibility.main
+            parts = full_path.split(".")
+            if len(parts) >= 2:
+                controller_name = parts[1]  # vmware_compatibility
+
+        # Values
         old_val = change.get("old_value")
         new_val = change.get("new_value")
 
-        # Convert datetimes to string
         if isinstance(old_val, datetime):
             old_val = old_val.strftime("%Y-%m-%d %H:%M:%S.%f")
         if isinstance(new_val, datetime):
             new_val = new_val.strftime("%Y-%m-%d %H:%M:%S.%f")
 
-        lines.append(f"The Key Changed: {key_name}")
+        # Header
+        if controller_name:
+            lines.append(f"{controller_name} - The Key Changed: {key_name}")
+        else:
+            lines.append(f"The Key Changed: {key_name}")
+
         lines.append(f"New_value: {new_val}")
         lines.append(f"Old_value: {old_val}")
-        lines.append("")  # blank line between entries
+        lines.append("")
 
     return "\n".join(lines)
