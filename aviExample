@@ -192,3 +192,65 @@ def simple_deep_diff(t1, t2, key_name=None, ignore_type_in_groups=None):
 
     # Clean out empty sections
     return {k: v for k, v in diff.items() if v}
+
+============================================================
+
+import re
+from datetime import datetime
+
+def format_diff_for_email(data_dict):
+    """
+    Format the output of simple_deep_diff(...) into a text body
+    suitable for email.
+
+    Expects data_dict shaped like:
+    {
+      "values_changed": {
+         "ghost|QA['Version']": {"old_value": 1, "new_value": 2},
+         ...
+      },
+      ...
+    }
+    """
+    changes = data_dict.get("values_changed", {})
+    lines = []
+
+    for path, change in changes.items():
+        # --- Extract field name (last ['...'] part) ---
+        # e.g. "ghost|QA['Freq_Daily_at']" -> "Freq_Daily_at"
+        matches = re.findall(r"\['([^']+)'\]", path)
+        key_name = matches[-1] if matches else path
+
+        # --- Extract entity name (left of first "[") ---
+        # e.g. "ghost|QA['Freq_Daily_at']" -> "ghost|QA"
+        entity_name = None
+        if "[" in path:
+            entity_name = path.split("[", 1)[0]
+        else:
+            # Sometimes path might just be "ghost|QA" or similar
+            entity_name = path
+
+        if entity_name in ("root", "", None):
+            entity_name = None
+
+        # --- Extract values and normalize datetimes ---
+        old_val = change.get("old_value")
+        new_val = change.get("new_value")
+
+        if isinstance(old_val, datetime):
+            old_val = old_val.strftime("%Y-%m-%d %H:%M:%S.%f")
+        if isinstance(new_val, datetime):
+            new_val = new_val.strftime("%Y-%m-%d %H:%M:%S.%f")
+
+        # --- Build lines ---
+        if entity_name:
+            lines.append(f"{entity_name} - The Key Changed: {key_name}")
+        else:
+            lines.append(f"The Key Changed: {key_name}")
+
+        lines.append(f"New_value: {new_val}")
+        lines.append(f"Old_value: {old_val}")
+        lines.append("")  # blank line between entries
+
+    return "\n".join(lines)
+
