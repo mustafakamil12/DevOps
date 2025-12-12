@@ -1,38 +1,194 @@
-subject = f"Error Had Been Detected in {data_dict.get('ObjectType', None)}!"
+def simple_deep_diff(t1, t2, key_name=None, ignore_type_in_groups=None):
+    """
+    A simple DeepDiff-like function.
 
-lines = []
+    Parameters
+    ----------
+    t1, t2 : any
+        Structures to compare (dicts, lists/tuples, primitives).
+    key_name : str | list[str] | tuple[str] | None
+        - If None: normal behavior.
+        - If str: treated as a single key used to index list-of-dicts
+          (e.g. "appName").
+        - If list/tuple: composite key for list-of-dicts
+          (e.g. ["appName", "env"]).
+    ignore_type_in_groups : list[tuple[type | None]] | None
+        Type groups to relax type comparison.
+        Example: [(None, str, int, bool)] means these types can be
+        compared by string representation instead of strict type equality.
 
-# Title (not padded)
-lines.append('<h2 style="color:red; margin:0;">Error Had Been Detected, Check information below:</h2>')
+    Returns
+    -------
+    dict
+        {
+          "values_changed": { path: {"old_value": ..., "new_value": ...}, ... },
+          "dictionary_item_added": [path, ...],
+          "dictionary_item_removed": [path, ...],
+          "iterable_item_added": [path, ...],
+          "iterable_item_removed": [path, ...],
+        }
+        (empty sections are omitted)
+    """
+    diff = {
+        "values_changed": {},
+        "dictionary_item_added": [],
+        "dictionary_item_removed": [],
+        "iterable_item_added": [],
+        "iterable_item_removed": [],
+    }
 
-# Start padded block
-lines.append('<div style="padding-left: 20px;">')
+    # --- normalize key_name → key_names (list or None) -----------------------
+    if key_name is None:
+        key_names = None
+    elif isinstance(key_name, (str, int)):
+        key_names = [key_name]
+    else:
+        # assume it's already an iterable of keys (list/tuple/etc.)
+        key_names = list(key_name)
 
-# Add h3 fields inside the padded div
-fields = {
-    "Module Name": data_dict.get("ObjectType"),
-    "Action Type": data_dict.get("ActionType"),
-    "sp": data_dict.get("sp"),
-    "ScheduleID": data_dict.get("ScheduleID"),
-    "Module": data_dict.get("Module"),
-    "Import System": data_dict.get("ImportSystem"),
-    "Source Server": data_dict.get("SourceServer"),
-    "Destination Server": data_dict.get("DestinationServer"),
-    "Desination DB": data_dict.get("DesinationDB"),
-    "Desination Scheda": data_dict.get("DesinationScheda"),
-    "Desination Object": data_dict.get("DestinationObject"),
-    "Error Number": data_dict.get("ErrorNumber"),
-    "Error Severity": data_dict.get("ErrorSeverity"),
-    "Error State": data_dict.get("ErrorState"),
-    "Error Procedure": data_dict.get("ErrorProcedure"),
-    "Error Line": data_dict.get("ErrorLine"),
-    "Error Message": data_dict.get("ErrorMessage"),
-}
+    # --- normalize ignore_type_in_groups -------------------------------------
+    def _normalize_groups(groups):
+        if not groups:
+            return []
+        norm = []
+        for group in groups:
+            norm_group = []
+            for g in group:
+                if g is None:
+                    norm_group.append(type(None))
+                else:
+                    norm_group.append(g)
+            norm.append(tuple(norm_group))
+        return norm
 
-for label, value in fields.items():
-    lines.append(f'<h3 style="color:red; margin:4px 0;">{label}: {value}</h3>')
+    normalized_groups = _normalize_groups(ignore_type_in_groups)
 
-# Close padded block
-lines.append('</div>')
+    def in_same_ignore_group(v1, v2):
+        """Return True if type(v1) and type(v2) are in the same ignore group."""
+        if not normalized_groups:
+            return False
+        t1_, t2_ = type(v1), type(v2)
+        for group in normalized_groups:
+            if t1_ in group and t2_ in group:
+                return True
+        return False
 
-return "\n".join(lines), subject
+    def values_equal(v1, v2):
+        """
+        Equality logic with optional ignore_type_in_groups.
+
+        - If v1 == v2 normally, they are equal.
+        - Else, if both types are in the same ignore group, compare by str().
+        """
+        if v1 == v2:
+            return True
+
+        if in_same_ignore_group(v1, v2):
+            # Relaxed comparison: compare normalized string representations.
+            return str(v1) == str(v2)
+
+        return False
+
+    # --- path helpers --------------------------------------------------------
+    def key_to_str(key):
+        """Pretty string for a path segment (handles composite keys)."""
+        if isinstance(key, tuple):
+            # e.g. ('ghost', 'QA') → "ghost|QA"
+            return "|".join(map(str, key))
+        return str(key)
+
+    def make_path(parent, key):
+        """
+        Build a path string.
+
+        Examples:
+          parent="root", key="ghost"      → "ghost"
+          parent="ghost", key="b"         → "ghost['b']"
+          parent="ghost|QA", key="c"      → "ghost|QA['c']"
+        """
+        k_str = key_to_str(key)
+        if parent in ("root", "", None):
+            return k_str
+        else:
+            return f"{parent}['{k_str}']"
+
+    # --- core recursive diff -------------------------------------------------
+    def _diff(v1, v2, path):
+        # Case 1: both are dicts
+        if isinstance(v1, dict) and isinstance(v2, dict):
+            keys1 = set(v1.keys())
+            keys2 = set(v2.keys())
+
+            # Added keys
+            for k in sorted(keys2 - keys1):
+                diff["dictionary_item_added"].append(make_path(path, k))
+
+            # Removed keys
+            for k in sorted(keys1 - keys2):
+                diff["dictionary_item_removed"].append(make_path(path, k))
+
+            # Keys in both → recurse
+            for k in sorted(keys1 & keys2):
+                _diff(v1[k], v2[k], make_path(path, k))
+
+        # Case 2: both are lists/tuples
+        elif isinstance(v1, (list, tuple)) and isinstance(v2, (list, tuple)):
+            # Special case: list of dicts keyed by key_names (e.g. appName/env)
+            if (
+                key_names
+                and all(isinstance(x, dict) for x in v1)
+                and all(isinstance(x, dict) for x in v2)
+                and all(all(k in d for k in key_names) for d in v1)
+                and all(all(k in d for k in key_names) for d in v2)
+            ):
+                def make_composite_key(d):
+                    return tuple(d[k] for k in key_names)
+
+                index1 = {make_composite_key(d): d for d in v1}
+                index2 = {make_composite_key(d): d for d in v2}
+
+                k1 = set(index1.keys())
+                k2 = set(index2.keys())
+
+                # Added composite keys
+                for k in sorted(k2 - k1):
+                    diff["dictionary_item_added"].append(make_path(path, k))
+
+                # Removed composite keys
+                for k in sorted(k1 - k2):
+                    diff["dictionary_item_removed"].append(make_path(path, k))
+
+                # Common composite keys → recurse into each dict
+                for k in sorted(k1 & k2):
+                    sub_path = make_path(path, k)  # e.g. "ghost|QA"
+                    _diff(index1[k], index2[k], sub_path)
+            else:
+                # Normal positional list comparison
+                len1, len2 = len(v1), len(v2)
+                max_len = max(len1, len2)
+
+                for i in range(max_len):
+                    if path:
+                        item_path = f"{path}[{i}]"
+                    else:
+                        item_path = f"[{i}]"
+
+                    if i >= len1:
+                        diff["iterable_item_added"].append(item_path)
+                    elif i >= len2:
+                        diff["iterable_item_removed"].append(item_path)
+                    else:
+                        _diff(v1[i], v2[i], item_path)
+
+        # Case 3: base / primitive values
+        else:
+            if not values_equal(v1, v2):
+                diff["values_changed"][path] = {
+                    "old_value": v1,
+                    "new_value": v2,
+                }
+
+    _diff(t1, t2, "root")
+
+    # Clean out empty sections
+    return {k: v for k, v in diff.items() if v}
