@@ -254,3 +254,32 @@ def format_diff_for_email(data_dict):
 
     return "\n".join(lines)
 
+===============================================
+
+t1 = {
+    "content": [
+        {
+            "module": "scheduleController.ad_servers.update_ad_servers",
+            "web_name": "some_web",
+            "updater_id": "job_123",
+            "Freq_Daily_at": "22:47:00",
+            "UpdateDate": datetime(2025, 12, 11, 22, 42, 19, 190000),
+            "Version": 60,
+        },
+        # ...
+    ]
+}
+
+t2 = {
+    "content": [
+        {
+            "module": "scheduleController.ad_servers.update_ad_servers",
+            "web_name": "some_web",
+            "updater_id": "job_123",
+            "Freq_Daily_at": "22:38:00",
+            "UpdateDate": datetime(2025, 12, 11, 22, 33, 23, 773000),
+            "Version": 63,
+        },
+        # ...
+    ]
+}
