@@ -1,0 +1,185 @@
+import schedule
+from dataclasses import dataclass
+from typing import Any, Callable, Optional, Sequence
+
+
+@dataclass(frozen=True)
+class ScheduleSpec:
+    every: int = 1                         # schedule.every(every)
+    unit: str = "day"                      # "seconds"|"minutes"|"hours"|"day"|"days"|"week"|"weeks" ...
+    at: Optional[str] = None               # "HH:MM" or "HH:MM:SS" or ":SS" (depends on unit)
+    weekday: Optional[str] = None          # "monday"..."sunday" if using weekly weekday schedules
+    tags: Sequence[str] = ()
+    # add more knobs as you need (start_day_of_month, last_day_of_month, etc.)
+
+
+def build_job(spec: ScheduleSpec) -> schedule.Job:
+    """
+    Build schedule.Job without eval, using maps for attribute and method calls.
+    """
+    job = schedule.every(spec.every)
+
+    # 1) apply unit
+    UNIT_ATTRS = {
+        "second": "seconds",
+        "seconds": "seconds",
+        "minute": "minutes",
+        "minutes": "minutes",
+        "hour": "hours",
+        "hours": "hours",
+        "day": "day",
+        "days": "days",
+        "week": "week",
+        "weeks": "weeks",
+    }
+    unit_attr = UNIT_ATTRS.get(spec.unit)
+    if not unit_attr:
+        raise ValueError(f"Unsupported unit: {spec.unit}")
+
+    job = getattr(job, unit_attr)
+
+    # 2) apply weekday if present (only meaningful for weekly-ish schedules)
+    if spec.weekday:
+        WEEKDAYS = {
+            "monday": "monday",
+            "tuesday": "tuesday",
+            "wednesday": "wednesday",
+            "thursday": "thursday",
+            "friday": "friday",
+            "saturday": "saturday",
+            "sunday": "sunday",
+        }
+        wd_attr = WEEKDAYS.get(spec.weekday.lower())
+        if not wd_attr:
+            raise ValueError(f"Unsupported weekday: {spec.weekday}")
+        job = getattr(job, wd_attr)
+
+    # 3) apply .at(...) if provided
+    if spec.at:
+        job = job.at(spec.at)
+
+    # tags are applied after .do(...) typically, but schedule allows tagging after creation
+    return job
+
+
+def schedule_with_spec(
+    spec: ScheduleSpec,
+    job_func: Callable[..., Any],
+    *job_args: Any,
+    **job_kwargs: Any
+) -> schedule.Job:
+    job = build_job(spec).do(job_func, *job_args, **job_kwargs)
+    if spec.tags:
+        job.tag(*spec.tags)
+    return job
+
+=================
+
+spec = ScheduleSpec(
+    every=1,
+    unit="day",
+    at=Freq_Monthly_at,
+    tags=(tag1, tag2),
+)
+
+schedule_with_spec(
+    spec,
+    start_thread,
+    function_to_use,
+    module_to_use,
+    module_to_schedule["DBQuery"],
+    module_to_schedule["DBQuery1"],
+    module_to_schedule["TaskBefore"],
+    module_to_schedule["TaskAfter"],
+    module_to_schedule["TaskBefore1"],
+    module_to_schedule["TaskAfter1"],
+    module_to_schedule,
+)
+
+==================
+
+from datetime import date, timedelta
+
+def is_last_day_of_month(d: date) -> bool:
+    return (d + timedelta(days=1)).month != d.month
+
+def monthly_guarded_runner(real_job, *args, **kwargs):
+    today = date.today()
+    if is_last_day_of_month(today):
+        return real_job(*args, **kwargs)
+    # else: do nothing
+
+spec = ScheduleSpec(unit="day", at="09:05", tags=("monthly", "end_of_month"))
+
+schedule_with_spec(
+    spec,
+    monthly_guarded_runner,
+    start_thread,                 # real job
+    function_to_use,
+    module_to_use,
+    module_to_schedule["DBQuery"],
+    module_to_schedule["DBQuery1"],
+    module_to_schedule["TaskBefore"],
+    module_to_schedule["TaskAfter"],
+    module_to_schedule["TaskBefore1"],
+    module_to_schedule["TaskAfter1"],
+    module_to_schedule,
+)
+
+==================
+
+from datetime import date, timedelta
+
+def is_last_day_of_month(d: date) -> bool:
+    return (d + timedelta(days=1)).month != d.month
+
+def monthly_guarded_runner(real_job, *args, **kwargs):
+    today = date.today()
+    if is_last_day_of_month(today):
+        return real_job(*args, **kwargs)
+    # else: do nothing
+
+spec = ScheduleSpec(unit="day", at="09:05", tags=("monthly", "end_of_month"))
+
+schedule_with_spec(
+    spec,
+    monthly_guarded_runner,
+    start_thread,                 # real job
+    function_to_use,
+    module_to_use,
+    module_to_schedule["DBQuery"],
+    module_to_schedule["DBQuery1"],
+    module_to_schedule["TaskBefore"],
+    module_to_schedule["TaskAfter"],
+    module_to_schedule["TaskBefore1"],
+    module_to_schedule["TaskAfter1"],
+    module_to_schedule,
+)
+
+
+================
+
+def make_job_payload(module_to_schedule: dict, function_to_use, module_to_use):
+    return (
+        function_to_use,
+        module_to_use,
+        module_to_schedule.get("DBQuery"),
+        module_to_schedule.get("DBQuery1"),
+        module_to_schedule.get("TaskBefore"),
+        module_to_schedule.get("TaskAfter"),
+        module_to_schedule.get("TaskBefore1"),
+        module_to_schedule.get("TaskAfter1"),
+        module_to_schedule,
+    )
+
+payload = make_job_payload(module_to_schedule, function_to_use, module_to_use)
+
+schedule_with_spec(
+    ScheduleSpec(unit="day", at=Freq_Monthly_at, tags=(tag1, tag2)),
+    start_thread,
+    *payload
+)
+
+
+  ================
+
