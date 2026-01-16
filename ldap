@@ -1,0 +1,125 @@
+import threading
+from ldap3 import Server, Connection, NTLM, TLS_CHANNEL_BINDING, NONE
+from ldap3.core.exceptions import LDAPException
+
+class LdapConnection:
+    def __init__(self, host, user, password, tls, port=636, auto_referrals=False):
+        self.host = host
+        self.user = user
+        self.password = password
+        self.tls = tls
+        self.port = port
+        self.auto_referrals = auto_referrals
+
+        self.server = Server(
+            host,
+            use_ssl=True,
+            port=port,
+            tls=tls,
+            get_info=NONE
+        )
+
+        self._conn = None
+        self._lock = threading.Lock()
+
+    def connect(self):
+        """
+        Create + bind LDAP connection if missing or not bound.
+        Reuses existing connection if already bound.
+        """
+        with self._lock:
+            if self._conn and self._conn.bound:
+                return self._conn
+
+            # cleanup old connection if any
+            if self._conn:
+                try:
+                    self._conn.unbind()
+                except Exception:
+                    pass
+                self._conn = None
+
+            # create new connection (NO retry)
+            self._conn = Connection(
+                self.server,
+                user=self.user,
+                password=self.password,
+                authentication=NTLM,                   # use constant
+                channel_binding=TLS_CHANNEL_BINDING,    # CBT
+                auto_bind=True,
+                auto_referrals=self.auto_referrals,
+            )
+            return self._conn
+
+    def search(self, search_base, search_filter, attributes=None, size_limit=0):
+        """
+        Run LDAP search using the active connection.
+        """
+        conn = self.connect()
+
+        ok = conn.search(
+            search_base=search_base,
+            search_filter=search_filter,
+            attributes=attributes,
+            size_limit=size_limit,
+        )
+
+        return ok, conn.entries
+
+    def is_connected(self):
+        """
+        Returns True if connected and bound.
+        """
+        return bool(self._conn and self._conn.bound)
+
+    def close(self):
+        """
+        Always clean up connection.
+        """
+        with self._lock:
+            if self._conn:
+                try:
+                    self._conn.unbind()
+                except Exception:
+                    pass
+                self._conn = None
+
+    # Optional: allow "with LdapConnection(...) as ldap:"
+    def __enter__(self):
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+
+
+=================
+How to use it
+
+ldap_mgr = LdapConnection(
+    host="dc01.company.local",
+    user=user,
+    password=password,
+    tls=tls,
+    auto_referrals=False,
+)
+
+ok, entries = ldap_mgr.search(
+    search_base=search_base,
+    search_filter=filter,
+    attributes=[attr],
+)
+
+print(ok, len(entries))
+
+ldap_mgr.close()
+
+
+===================
+
+using with
+
+with LdapConnection("dc01.company.local", user, password, tls) as ldap_mgr:
+    ok, entries = ldap_mgr.search(search_base, filter, attributes=[attr])
+    print(len(entries))
+
