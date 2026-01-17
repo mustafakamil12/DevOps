@@ -91,6 +91,77 @@ class LdapConnection:
 
     def __exit__(self, exc_type, exc, tb):
         self.close()
+=================
+Another version without threading
+
+from ldap3 import Server, Connection, NTLM, TLS_CHANNEL_BINDING, NONE
+
+class LdapConnection:
+    def __init__(self, host, user, password, tls, port=636, auto_referrals=False):
+        self.host = host
+        self.user = user
+        self.password = password
+        self.tls = tls
+        self.port = port
+        self.auto_referrals = auto_referrals
+
+        self.server = Server(
+            host,
+            use_ssl=True,
+            port=port,
+            tls=tls,
+            get_info=NONE
+        )
+
+        self._conn = None
+
+    def connect(self):
+        if self._conn and self._conn.bound:
+            return self._conn
+
+        # cleanup old connection if any
+        if self._conn:
+            try:
+                self._conn.unbind()
+            except Exception:
+                pass
+            self._conn = None
+
+        self._conn = Connection(
+            self.server,
+            user=self.user,
+            password=self.password,
+            authentication=NTLM,
+            channel_binding=TLS_CHANNEL_BINDING,
+            auto_bind=True,
+            auto_referrals=self.auto_referrals,
+        )
+        return self._conn
+
+    def search(self, search_base, search_filter, attributes=None, size_limit=0):
+        conn = self.connect()
+        ok = conn.search(
+            search_base=search_base,
+            search_filter=search_filter,
+            attributes=attributes,
+            size_limit=size_limit,
+        )
+        return ok, conn.entries
+
+    def close(self):
+        if self._conn:
+            try:
+                self._conn.unbind()
+            except Exception:
+                pass
+            self._conn = None
+
+    def __enter__(self):
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
 
 
 =================
