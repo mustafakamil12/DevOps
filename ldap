@@ -167,7 +167,7 @@ class LdapConnection:
 Updated class
 
 import re
-from ldap3 import Server, Connection, NTLM, TLS_CHANNEL_BINDING, NONE, ALL
+from ldap3 import Server, Connection, NTLM, TLS_CHANNEL_BINDING, NONE
 from ldap3.core.exceptions import LDAPException
 
 
@@ -181,13 +181,8 @@ class LdapConnection:
         port: int = 636,
         get_info=NONE,
         auto_referrals: bool = False,
-        keep_open: bool = True,
         debug: bool = False,
     ):
-        """
-        keep_open=True  -> reuse one bound connection across calls (recommended to avoid DNS rotation)
-        keep_open=False -> unbind after each query (more like your original behavior)
-        """
         self.host = host
         self.user = user
         self.password = password
@@ -195,29 +190,31 @@ class LdapConnection:
         self.port = port
         self.get_info = get_info
         self.auto_referrals = auto_referrals
-        self.keep_open = keep_open
         self.debug = debug
 
-        # IMPORTANT: host should be plain hostname, not 'ldaps://...'
         self.server = Server(
-            host,
+            host,               # no ldaps:// here
             use_ssl=True,
             port=port,
             tls=tls,
-            get_info=get_info
+            get_info=get_info,
         )
 
         self.conn = None
 
+    def __enter__(self):
+        # auto connect/bind when entering the with block
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        # always cleanup when leaving the with block
+        self.close()
+
     def connect(self):
-        """
-        Create + bind connection if not already bound.
-        No retry logic (per your request).
-        """
         if self.conn and self.conn.bound:
             return self.conn
 
-        # cleanup old connection if any
         if self.conn:
             try:
                 self.conn.unbind()
@@ -245,7 +242,6 @@ class LdapConnection:
         return self.conn
 
     def close(self):
-        """Explicitly close the LDAP session."""
         if self.conn:
             try:
                 self.conn.unbind()
@@ -254,111 +250,44 @@ class LdapConnection:
             self.conn = None
 
     def query_groups(self, search_base: str, search_filter: str, attr: str, member=None, chkFlag: bool = False):
-        """
-        This mirrors your original function behavior:
+        conn = self.connect()
 
-        - If entries found and member is empty:
-            - chkFlag True -> return True
-            - else -> return conn.entries
+        entries_ok = conn.search(
+            search_base=search_base,
+            search_filter=search_filter,
+            attributes=[attr],
+        )
 
-        - If entries found and member provided:
-            - build member list from entry['member'] DNs
-            - if member matches:
-                - return description if exists else cn
-            - else return ''
-
-        - If object not exist:
-            - chkFlag True -> return False
-            - else -> return []
-        """
-        conn = None
-        try:
-            conn = self.connect()
-
-            if self.debug:
-                print(f"conn now after checking: {conn}")
-                print(f"search_base= {search_base}")
-                print(f"search_filter= {search_filter}")
-                print(f"attributes= {[attr]}")
-
-            entries_ok = conn.search(
-                search_base=search_base,
-                search_filter=search_filter,
-                attributes=[attr],
-            )
-
-            if self.debug:
-                print(f"entries_ok: {entries_ok}")
-                print(f"conn.entries: {conn.entries}")
-                print(f"conn.entries count: {len(conn.entries)}")
-
-            memberList = []
-
-            if entries_ok:
-                if not member:
-                    if self.debug:
-                        print("member is empty")
-
-                    if chkFlag:
-                        return True
-                    return conn.entries
-
-                # member provided:
-                if self.debug:
-                    print("There's member")
-
-                for entry in conn.entries:
-                    # Your original code expects entry['member'] to be iterable
-                    # and each value to look like "CN=Name,OU=...,DC=..."
-                    try:
-                        for dn in entry["member"]:
-                            match = re.findall(r'=(.*?),', str(dn))
-                            if match:
-                                memberList.append(match[0])
-                    except Exception:
-                        # if 'member' missing or not iterable, ignore for this entry
-                        pass
-
-                if self.debug:
-                    print(f"memberList: {memberList}")
-
-                for memberItem in memberList:
-                    if memberItem == member:
-                        # return description if exists else cn (same as your original)
-                        if 'description' in conn.entries[0]:
-                            return conn.entries[0]['description']
-                        return conn.entries[0]['cn']
-                    else:
-                        # matches your original behavior: return '' as soon as first doesn't match
-                        # NOTE: this logic is probably not what you intended, but you asked to reflect original.
-                        return ''
-
-                # if memberList empty, fall through to ''
-                return ''
-
-            # object not exist
-            if self.debug:
-                print("Object is not exist")
-
+        if not entries_ok:
             if chkFlag:
                 return False
             return []
 
-        except LDAPException as e:
-            # no retry here; bubble up (or you can return [] / False depending on your preference)
-            raise
+        if not member:
+            if chkFlag:
+                return True
+            return conn.entries
 
-        finally:
-            # Your choice:
-            # - keep_open=True: keep the same bound connection for next call (best to reduce DNS rotation)
-            # - keep_open=False: always unbind after each call (closer to old script style)
-            if not self.keep_open:
-                try:
-                    if self.conn:
-                        self.conn.unbind()
-                except Exception:
-                    pass
-                self.conn = None
+        memberList = []
+        for entry in conn.entries:
+            try:
+                for dn in entry["member"]:
+                    match = re.findall(r'=(.*?),', str(dn))
+                    if match:
+                        memberList.append(match[0])
+            except Exception:
+                pass
+
+        for memberItem in memberList:
+            if memberItem == member:
+                if 'description' in conn.entries[0]:
+                    return conn.entries[0]['description']
+                return conn.entries[0]['cn']
+            else:
+                return ""
+
+        return ""
+
 
 
 =================
