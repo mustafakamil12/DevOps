@@ -320,3 +320,17 @@ with LdapConnection("dc01.company.local", user, password, tls) as ldap_mgr:
     ok, entries = ldap_mgr.search(search_base, filter, attributes=[attr])
     print(len(entries))
 
+===================
+
+print("use_ssl:", conn.server.ssl)
+print("port:", conn.server.port)
+print("bound:", conn.bound)
+
+# If this works, you are definitely on an SSL socket:
+print("TLS version:", conn.socket.version())
+print("Cipher:", conn.socket.cipher())
+
+# Optional: show the server certificate subject (may be big)
+cert = conn.socket.getpeercert()
+print("Cert subject:", cert.get("subject"))
+print("SAN:", cert.get("subjectAltName"))
