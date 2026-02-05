@@ -86,3 +86,52 @@ domains:
   "u.lac.nsroot.net":      { env: uat,  region: latam }
   "p.lac.nsroot.net":      { env: prod, region: latam }
   "p.lacdmz.dmzroot.net":  { env: prod, region: latam }
+
+
+------------
+
+VSI_VDI:
+  vsi: [apc, euc, lac, nac]
+  vdi: [apv, euv, lav, nav]
+  dev: [sdd]
+
+expected_dns_servers:
+  - 192.193.215.65
+  - 192.193.215.69
+  - 192.193.215.73
+
+expected_ntp_servers:
+  - 192.193.215.65
+  - 192.193.215.69
+  - 192.193.215.73
+
+expected_user_configs:
+  local_users:
+    admin:
+      roles: [enterprise_admin]
+      status: active
+    audit:
+      roles: [auditor]
+      status: active
+
+  vidm_users:
+    prv_nsx_software_defined_networking@nam.nsroot.net:
+      roles: [enterprise_admin]
+    prv_nsx_software_defined_networking_readonly@nam.nsroot.net:
+      roles: [auditor]
+    vmw_sdn_networkgroup_ro@nam.nsroot.net:
+      roles: [auditor]
+    app_infrastructure_orchestration@nam.nsroot.net:
+      roles: [enterprise_admin]
+    app_global_sdnops_vcenter@nam.nsroot.net:
+      roles: [enterprise_admin]
+    svc_cns2nsx@nam.nsroot.net:
+      roles: [auditor]
+    app_globalvmwareops@nam.nsroot.net:
+      roles: [security_admin]
+    app_iaas_orchestration@nam.nsroot.net:
+      roles: [security_admin]
+    vro2nsx01@nam.nsroot.net:
+      roles: [lb_admin, security_admin]
+
+audit_nsxmanagers: "{call spRPT_NSX_audit_nsxmanagers}"
