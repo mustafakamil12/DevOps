@@ -64,3 +64,25 @@
 
 
 ---------
+
+
+domains:
+  ".namdev.nsrootdev.net": { env: dev,  region: nam }
+  "u.nam.nsroot.net":      { env: uat,  region: nam }
+  "p.nam.nsroot.net":      { env: prod, region: nam }
+  "p.namdmz.dmzroot.net":  { env: prod, region: nam }
+
+  ".eurdev.nsrootdev.net": { env: dev,  region: emea }
+  "u.eur.nsroot.net":      { env: uat,  region: emea }
+  "p.eur.nsroot.net":      { env: prod, region: emea }
+  "p.eurdmz.dmzroot.net":  { env: prod, region: emea }
+
+  ".apacdev.nsrootdev.net": { env: dev,  region: apac }
+  "u.apac.nsroot.net":      { env: uat,  region: apac }
+  "p.apac.nsroot.net":      { env: prod, region: apac }
+  "p.apacdmz.dmzroot.net":  { env: prod, region: apac }
+
+  ".lacdev.nsrootdev.net": { env: dev,  region: latam }
+  "u.lac.nsroot.net":      { env: uat,  region: latam }
+  "p.lac.nsroot.net":      { env: prod, region: latam }
+  "p.lacdmz.dmzroot.net":  { env: prod, region: latam }
