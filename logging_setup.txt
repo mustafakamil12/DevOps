@@ -3,17 +3,44 @@ import logging
 import logging.handlers
 import queue
 import socket
+import contextvars
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Literal, Union
 
 
+# ---------- Context / Correlation IDs (enterprise must-have) ----------
+request_id_var = contextvars.ContextVar("request_id", default=None)
+job_id_var = contextvars.ContextVar("job_id", default=None)
+trace_id_var = contextvars.ContextVar("trace_id", default=None)
+
+
+def set_log_context(*, request_id: str | None = None, job_id: str | None = None, trace_id: str | None = None) -> None:
+    if request_id is not None:
+        request_id_var.set(request_id)
+    if job_id is not None:
+        job_id_var.set(job_id)
+    if trace_id is not None:
+        trace_id_var.set(trace_id)
+
+
+class ContextFilter(logging.Filter):
+    """Inject contextvars into every LogRecord."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        record.job_id = job_id_var.get()
+        record.trace_id = trace_id_var.get()
+        return True
+
+
+# ---------- Formatting ----------
 class JsonFormatter(logging.Formatter):
     """
     JSON formatter that supports:
       - normal text messages
       - structured payload via extra={"payload": {...}}
+      - correlation ids via contextvars (request_id/job_id/trace_id)
     """
     def format(self, record: logging.LogRecord) -> str:
         base: dict[str, Any] = {
@@ -28,22 +55,43 @@ class JsonFormatter(logging.Formatter):
             "thread": record.thread,
         }
 
+        # Correlation IDs (optional)
+        for k in ("request_id", "job_id", "trace_id"):
+            v = getattr(record, k, None)
+            if v:
+                base[k] = v
+
+        # Structured payload
         payload = getattr(record, "payload", None)
         if payload is not None:
             base["payload"] = payload
 
+        # Exceptions
         if record.exc_info:
             base["exc_info"] = self.formatException(record.exc_info)
 
         return json.dumps(base, default=str)
 
 
+class TextFormatter(logging.Formatter):
+    """Readable console formatter (optional)."""
+    def format(self, record: logging.LogRecord) -> str:
+        rid = getattr(record, "request_id", None)
+        jid = getattr(record, "job_id", None)
+        tid = getattr(record, "trace_id", None)
+        ctx = " ".join([f"request_id={rid}" if rid else "", f"job_id={jid}" if jid else "", f"trace_id={tid}" if tid else ""]).strip()
+        if ctx:
+            ctx = f" [{ctx}]"
+        return f"{datetime.fromtimestamp(record.created).isoformat()} {record.levelname} {record.name}{ctx} - {record.getMessage()}"
+
+
+# ---------- Remote Handlers ----------
 class JsonHttpHandler(logging.Handler):
     """
     Sends JSON logs via HTTP POST to an ingestion endpoint.
-    This uses urllib (no extra deps).
+    NOTE: runs in the QueueListener thread (not your app threads), but still network I/O.
     """
-    def __init__(self, url: str, timeout: float = 3.0, headers: Optional[dict[str, str]] = None):
+    def __init__(self, url: str, timeout: float = 2.0, headers: Optional[dict[str, str]] = None):
         super().__init__()
         self.url = url
         self.timeout = timeout
@@ -54,10 +102,9 @@ class JsonHttpHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             import urllib.request
-
             payload = self.format(record).encode("utf-8")
             req = urllib.request.Request(self.url, data=payload, headers=self.headers, method="POST")
-            with urllib.request.urlopen(req, timeout=self.timeout) as _:
+            with urllib.request.urlopen(req, timeout=self.timeout):
                 pass
         except Exception:
             # Never let remote logging break your app:
@@ -66,103 +113,152 @@ class JsonHttpHandler(logging.Handler):
 
 @dataclass(frozen=True)
 class RemoteLogConfig:
-    """
-    Choose ONE transport at a time (simplest & most common).
-    - kind: "syslog" | "tcp" | "http"
-    """
-    kind: str  # "syslog" | "tcp" | "http"
+    kind: Literal["syslog", "tcp", "http"]
     host: str
     port: int
-    # Only for HTTP:
     http_url: Optional[str] = None
     http_headers: Optional[dict[str, str]] = None
-    # Syslog flavor:
-    syslog_socktype: str = "udp"  # "udp" or "tcp"
-    # Optional tag/appname:
+    syslog_socktype: Literal["udp", "tcp"] = "udp"
     appname: str = "my_app"
+    level: int = logging.WARNING  # Remote often defaults to WARNING+ to reduce noise
 
 
-def _build_remote_handler(remote: RemoteLogConfig, formatter: logging.Formatter, level: int) -> logging.Handler:
+def _build_remote_handler(remote: RemoteLogConfig, formatter: logging.Formatter) -> logging.Handler:
     kind = remote.kind.lower().strip()
 
     if kind == "syslog":
-        socktype = socket.SOCK_DGRAM if remote.syslog_socktype.lower() == "udp" else socket.SOCK_STREAM
+        socktype = socket.SOCK_DGRAM if remote.syslog_socktype == "udp" else socket.SOCK_STREAM
         h = logging.handlers.SysLogHandler(address=(remote.host, remote.port), socktype=socktype)
-        # Syslog daemons often expect short messages; we’ll send JSON string as msg
         h.setFormatter(formatter)
-        h.setLevel(level)
+        h.setLevel(remote.level)
         return h
 
     if kind == "tcp":
-        # Sends pickled LogRecord to a TCP server (Python receiver via SocketServer).
-        # Good if you control the receiver; not ideal for generic SIEM without a bridge.
         h = logging.handlers.SocketHandler(remote.host, remote.port)
-        h.setLevel(level)
-        return h  # SocketHandler does its own pickling; formatter is not used
+        h.setLevel(remote.level)
+        return h  # SocketHandler pickles LogRecord; formatter not used
 
     if kind == "http":
         if not remote.http_url:
             raise ValueError("RemoteLogConfig(kind='http') requires http_url")
         h = JsonHttpHandler(url=remote.http_url, headers=remote.http_headers)
         h.setFormatter(formatter)
-        h.setLevel(level)
+        h.setLevel(remote.level)
         return h
 
     raise ValueError(f"Unsupported remote logging kind: {remote.kind!r}")
+
+
+# ---------- Setup ----------
+@dataclass(frozen=True)
+class LogSetup:
+    listener: logging.handlers.QueueListener
+
+    def stop(self) -> None:
+        self.listener.stop()
 
 
 def setup_logging(
     *,
     app_name: str = "enterprise_app",
     level: int = logging.INFO,
-    log_file: str = "app.log",
+    log_file: Union[str, Path] = "app.log",
+    rotation: Literal["size", "time"] = "size",
+    max_bytes: int = 20_000_000,
+    backup_count: int = 10,
+    when: str = "midnight",
+    interval: int = 1,
+    utc: bool = True,
+    console_format: Literal["json", "text"] = "json",
     remote: Optional[RemoteLogConfig] = None,
-) -> logging.handlers.QueueListener:
+    force: bool = False,
+) -> LogSetup:
     """
-    One logging pipeline for the whole app:
+    Enterprise-grade logging:
       root logger -> QueueHandler -> QueueListener -> handlers (console, file, optional remote)
 
-    remote: if provided, also forwards logs to a log server (syslog/tcp/http).
+    - rotation: "size" (RotatingFileHandler) or "time" (TimedRotatingFileHandler)
+    - remote: optional forwarding (syslog/tcp/http), with its own level (default WARNING)
+    - contextvars: request_id/job_id/trace_id supported via set_log_context()
+    - force: reinitialize even if already configured
     """
-    log_queue: queue.Queue = queue.Queue(-1)
-
     root = logging.getLogger()
-    root.setLevel(level)
-    root.handlers.clear()  # prevent duplicates if called twice
 
+    if root.handlers and not force:
+        # Already configured: return a no-op wrapper (or raise if you prefer).
+        # In enterprise apps, this prevents double-logging when modules are run in odd ways.
+        # If you want to reconfigure, call setup_logging(force=True).
+        existing_listener = getattr(root, "_enterprise_listener", None)
+        if isinstance(existing_listener, logging.handlers.QueueListener):
+            return LogSetup(existing_listener)
+        # If handlers exist but we don't own them, we still avoid messing with them.
+        return LogSetup(logging.handlers.QueueListener(queue.Queue(), respect_handler_level=True))
+
+    root.setLevel(level)
+    root.handlers.clear()
+    root.filters.clear()
+    root.addFilter(ContextFilter())
+
+    log_queue: queue.Queue = queue.Queue(-1)
     root.addHandler(logging.handlers.QueueHandler(log_queue))
 
-    formatter = JsonFormatter()
+    formatter: logging.Formatter = JsonFormatter()
+    console_formatter: logging.Formatter = formatter if console_format == "json" else TextFormatter()
 
     handlers: list[logging.Handler] = []
 
+    # Console
     console = logging.StreamHandler()
-    console.setFormatter(formatter)
+    console.setFormatter(console_formatter)
     console.setLevel(level)
     handlers.append(console)
 
-    Path(log_file).parent.mkdir(parents=True, exist_ok=True)
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file, maxBytes=20_000_000, backupCount=10, encoding="utf-8"
-    )
+    # File
+    log_path = Path(log_file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if rotation == "time":
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            str(log_path),
+            when=when,
+            interval=interval,
+            backupCount=backup_count,
+            utc=utc,
+            encoding="utf-8",
+        )
+    else:
+        file_handler = logging.handlers.RotatingFileHandler(
+            str(log_path),
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
+
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)
     handlers.append(file_handler)
 
+    # Remote (optional)
     if remote is not None:
-        remote_handler = _build_remote_handler(remote, formatter, level)
+        remote_handler = _build_remote_handler(remote, formatter)
         handlers.append(remote_handler)
-
-        logging.getLogger(app_name).info(
-            "remote logging enabled",
-            extra={"payload": {"kind": remote.kind, "host": remote.host, "port": remote.port}},
-        )
 
     listener = logging.handlers.QueueListener(log_queue, *handlers, respect_handler_level=True)
     listener.start()
 
+    # Store listener reference so repeated calls can return it
+    setattr(root, "_enterprise_listener", listener)
+
     logging.getLogger(app_name).info(
         "logging initialized",
-        extra={"payload": {"log_file": log_file, "remote": (remote.kind if remote else None)}},
+        extra={
+            "payload": {
+                "log_file": str(log_path),
+                "rotation": rotation,
+                "remote": (remote.kind if remote else None),
+                "remote_level": (logging.getLevelName(remote.level) if remote else None),
+            }
+        },
     )
-    return listener
+
+    return LogSetup(listener)
