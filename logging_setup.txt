@@ -1,0 +1,168 @@
+import json
+import logging
+import logging.handlers
+import queue
+import socket
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+
+class JsonFormatter(logging.Formatter):
+    """
+    JSON formatter that supports:
+      - normal text messages
+      - structured payload via extra={"payload": {...}}
+    """
+    def format(self, record: logging.LogRecord) -> str:
+        base: dict[str, Any] = {
+            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+            "module": record.module,
+            "func": record.funcName,
+            "line": record.lineno,
+            "process": record.process,
+            "thread": record.thread,
+        }
+
+        payload = getattr(record, "payload", None)
+        if payload is not None:
+            base["payload"] = payload
+
+        if record.exc_info:
+            base["exc_info"] = self.formatException(record.exc_info)
+
+        return json.dumps(base, default=str)
+
+
+class JsonHttpHandler(logging.Handler):
+    """
+    Sends JSON logs via HTTP POST to an ingestion endpoint.
+    This uses urllib (no extra deps).
+    """
+    def __init__(self, url: str, timeout: float = 3.0, headers: Optional[dict[str, str]] = None):
+        super().__init__()
+        self.url = url
+        self.timeout = timeout
+        self.headers = {"Content-Type": "application/json"}
+        if headers:
+            self.headers.update(headers)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            import urllib.request
+
+            payload = self.format(record).encode("utf-8")
+            req = urllib.request.Request(self.url, data=payload, headers=self.headers, method="POST")
+            with urllib.request.urlopen(req, timeout=self.timeout) as _:
+                pass
+        except Exception:
+            # Never let remote logging break your app:
+            self.handleError(record)
+
+
+@dataclass(frozen=True)
+class RemoteLogConfig:
+    """
+    Choose ONE transport at a time (simplest & most common).
+    - kind: "syslog" | "tcp" | "http"
+    """
+    kind: str  # "syslog" | "tcp" | "http"
+    host: str
+    port: int
+    # Only for HTTP:
+    http_url: Optional[str] = None
+    http_headers: Optional[dict[str, str]] = None
+    # Syslog flavor:
+    syslog_socktype: str = "udp"  # "udp" or "tcp"
+    # Optional tag/appname:
+    appname: str = "my_app"
+
+
+def _build_remote_handler(remote: RemoteLogConfig, formatter: logging.Formatter, level: int) -> logging.Handler:
+    kind = remote.kind.lower().strip()
+
+    if kind == "syslog":
+        socktype = socket.SOCK_DGRAM if remote.syslog_socktype.lower() == "udp" else socket.SOCK_STREAM
+        h = logging.handlers.SysLogHandler(address=(remote.host, remote.port), socktype=socktype)
+        # Syslog daemons often expect short messages; we’ll send JSON string as msg
+        h.setFormatter(formatter)
+        h.setLevel(level)
+        return h
+
+    if kind == "tcp":
+        # Sends pickled LogRecord to a TCP server (Python receiver via SocketServer).
+        # Good if you control the receiver; not ideal for generic SIEM without a bridge.
+        h = logging.handlers.SocketHandler(remote.host, remote.port)
+        h.setLevel(level)
+        return h  # SocketHandler does its own pickling; formatter is not used
+
+    if kind == "http":
+        if not remote.http_url:
+            raise ValueError("RemoteLogConfig(kind='http') requires http_url")
+        h = JsonHttpHandler(url=remote.http_url, headers=remote.http_headers)
+        h.setFormatter(formatter)
+        h.setLevel(level)
+        return h
+
+    raise ValueError(f"Unsupported remote logging kind: {remote.kind!r}")
+
+
+def setup_logging(
+    *,
+    app_name: str = "enterprise_app",
+    level: int = logging.INFO,
+    log_file: str = "app.log",
+    remote: Optional[RemoteLogConfig] = None,
+) -> logging.handlers.QueueListener:
+    """
+    One logging pipeline for the whole app:
+      root logger -> QueueHandler -> QueueListener -> handlers (console, file, optional remote)
+
+    remote: if provided, also forwards logs to a log server (syslog/tcp/http).
+    """
+    log_queue: queue.Queue = queue.Queue(-1)
+
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()  # prevent duplicates if called twice
+
+    root.addHandler(logging.handlers.QueueHandler(log_queue))
+
+    formatter = JsonFormatter()
+
+    handlers: list[logging.Handler] = []
+
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    console.setLevel(level)
+    handlers.append(console)
+
+    Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=20_000_000, backupCount=10, encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(level)
+    handlers.append(file_handler)
+
+    if remote is not None:
+        remote_handler = _build_remote_handler(remote, formatter, level)
+        handlers.append(remote_handler)
+
+        logging.getLogger(app_name).info(
+            "remote logging enabled",
+            extra={"payload": {"kind": remote.kind, "host": remote.host, "port": remote.port}},
+        )
+
+    listener = logging.handlers.QueueListener(log_queue, *handlers, respect_handler_level=True)
+    listener.start()
+
+    logging.getLogger(app_name).info(
+        "logging initialized",
+        extra={"payload": {"log_file": log_file, "remote": (remote.kind if remote else None)}},
+    )
+    return listener
