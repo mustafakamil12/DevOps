@@ -1,0 +1,69 @@
+import os
+import ssl
+import tempfile
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, pkcs12
+
+def create_ssl_context(
+    p12_path: str,
+    p12_password: str | None,
+    ca_bundle_path: str | None = None,
+) -> ssl.SSLContext:
+    with open(p12_path, "rb") as f:
+        p12_data = f.read()
+
+    private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(
+        p12_data,
+        p12_password.encode() if p12_password else None,
+    )
+
+    if private_key is None or certificate is None:
+        raise ValueError("PKCS#12 file does not contain a private key and certificate")
+
+    # Build one PEM chain for the client side:
+    # leaf cert first, then any intermediates that belong to that client cert chain.
+    cert_chain_pem = certificate.public_bytes(Encoding.PEM)
+    if additional_certs:
+        cert_chain_pem += b"".join(cert.public_bytes(Encoding.PEM) for cert in additional_certs)
+
+    key_pem = private_key.private_bytes(
+        Encoding.PEM,
+        PrivateFormat.TraditionalOpenSSL,
+        NoEncryption(),
+    )
+
+    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
+    cert_tmp = tempfile.NamedTemporaryFile("wb", delete=False)
+    key_tmp = tempfile.NamedTemporaryFile("wb", delete=False)
+
+    try:
+        cert_tmp.write(cert_chain_pem)
+        cert_tmp.flush()
+
+        key_tmp.write(key_pem)
+        key_tmp.flush()
+
+        cert_tmp.close()
+        key_tmp.close()
+
+        # Load client certificate + private key
+        ctx.load_cert_chain(certfile=cert_tmp.name, keyfile=key_tmp.name)
+
+        # Load trusted CA bundle for verifying the SERVER
+        if ca_bundle_path:
+            ctx.load_verify_locations(cafile=ca_bundle_path)
+
+        ctx.check_hostname = True
+        ctx.verify_mode = ssl.CERT_REQUIRED
+
+        return ctx
+
+    finally:
+        try:
+            os.remove(cert_tmp.name)
+        except OSError:
+            pass
+        try:
+            os.remove(key_tmp.name)
+        except OSError:
+            pass
