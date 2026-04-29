@@ -1,0 +1,353 @@
+python_scan_bot/
+│
+├── scan_bot.py
+├── scan_commands.yaml
+└── requirements.txt
+
+
+pip install scalene ruff pylint radon bandit semgrep pyyaml
+
+--> file| scan_commands.yaml
+
+tools:
+  scalene:
+    enabled: true
+    command:
+      - scalene
+      - "{app_path}"
+      - "--html"
+      - "--outfile"
+      - "{output_file}.html"
+
+  ruff:
+    enabled: true
+    command:
+      - ruff
+      - check
+      - "{app_path}"
+      - "--output-format"
+      - "json"
+    output_extension: json
+
+  pylint:
+    enabled: true
+    command:
+      - pylint
+      - "{app_path}"
+    output_extension: txt
+
+  radon_cc:
+    enabled: true
+    command:
+      - radon
+      - cc
+      - "{app_path}"
+      - "-s"
+      - "-a"
+    output_extension: txt
+
+  radon_mi:
+    enabled: true
+    command:
+      - radon
+      - mi
+      - "{app_path}"
+      - "-s"
+    output_extension: txt
+
+  bandit:
+    enabled: true
+    command:
+      - bandit
+      - "-r"
+      - "{app_path}"
+      - "-f"
+      - "json"
+    output_extension: json
+
+  semgrep:
+    enabled: true
+    command:
+      - semgrep
+      - "--config"
+      - "auto"
+      - "{app_path}"
+      - "--json"
+    output_extension: json
+
+--> app | scan_bot.py
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+class ConfigLoader:
+    def __init__(self, config_path: str):
+        self.config_path = Path(config_path)
+
+    def load(self) -> dict[str, Any]:
+        if not self.config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {self.config_path}")
+
+        with self.config_path.open("r", encoding="utf-8") as file:
+            return yaml.safe_load(file)
+
+
+class ApplicationResolver:
+    def __init__(self, single_app: str | None, app_file: str | None):
+        self.single_app = single_app
+        self.app_file = app_file
+
+    def get_applications(self) -> list[Path]:
+        applications: list[Path] = []
+
+        if self.single_app:
+            applications.append(Path(self.single_app).resolve())
+
+        if self.app_file:
+            file_path = Path(self.app_file)
+
+            if not file_path.exists():
+                raise FileNotFoundError(f"Application list file not found: {file_path}")
+
+            with file_path.open("r", encoding="utf-8") as file:
+                for line in file:
+                    app_path = line.strip()
+
+                    if app_path:
+                        applications.append(Path(app_path).resolve())
+
+        if not applications:
+            raise ValueError("You must provide either --app or --file")
+
+        return applications
+
+
+class ReportManager:
+    def __init__(self, output_main_dir: str):
+        self.output_main_dir = Path(output_main_dir).resolve()
+
+    def create_report_dir(self, app_path: Path) -> Path:
+        app_name = app_path.stem if app_path.is_file() else app_path.name
+        report_dir = self.output_main_dir / f"{app_name}_scan_report"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        return report_dir
+
+    def build_output_file(self, report_dir: Path, app_path: Path, tool_name: str, extension: str) -> Path:
+        app_name = app_path.stem if app_path.is_file() else app_path.name
+        return report_dir / f"{app_name}_{tool_name}.{extension}"
+
+
+class CommandBuilder:
+    def __init__(self, app_path: Path, output_file: Path):
+        self.app_path = app_path
+        self.output_file = output_file
+
+    def build(self, command_template: list[str]) -> list[str]:
+        command: list[str] = []
+
+        for part in command_template:
+            value = part.replace("{app_path}", str(self.app_path))
+            value = value.replace("{output_file}", str(self.output_file.with_suffix("")))
+            command.append(value)
+
+        return command
+
+
+class ToolRunner:
+    def __init__(self, timeout_seconds: int = 1800):
+        self.timeout_seconds = timeout_seconds
+
+    def run(self, command: list[str], output_file: Path) -> int:
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+                check=False,
+            )
+
+            output_file.write_text(
+                self.format_output(command, result),
+                encoding="utf-8",
+            )
+
+            return result.returncode
+
+        except subprocess.TimeoutExpired as exc:
+            output_file.write_text(
+                f"COMMAND TIMEOUT\n\nCommand:\n{' '.join(command)}\n\nTimeout: {self.timeout_seconds} seconds\n\n{exc}",
+                encoding="utf-8",
+            )
+            return 124
+
+        except Exception as exc:
+            output_file.write_text(
+                f"COMMAND FAILED\n\nCommand:\n{' '.join(command)}\n\nError:\n{exc}",
+                encoding="utf-8",
+            )
+            return 1
+
+    def format_output(self, command: list[str], result: subprocess.CompletedProcess) -> str:
+        return (
+            f"Command:\n{' '.join(command)}\n\n"
+            f"Return Code:\n{result.returncode}\n\n"
+            f"STDOUT:\n{result.stdout}\n\n"
+            f"STDERR:\n{result.stderr}\n"
+        )
+
+
+class ScanBot:
+    def __init__(self, config: dict[str, Any], output_main_dir: str):
+        self.config = config
+        self.report_manager = ReportManager(output_main_dir)
+        self.tool_runner = ToolRunner()
+
+    def scan_application(self, app_path: Path) -> None:
+        if not app_path.exists():
+            print(f"[SKIPPED] Application path not found: {app_path}")
+            return
+
+        report_dir = self.report_manager.create_report_dir(app_path)
+
+        print(f"\nScanning application: {app_path}")
+        print(f"Report folder: {report_dir}")
+
+        tools = self.config.get("tools", {})
+
+        for tool_name, tool_config in tools.items():
+            self.scan_with_tool(tool_name, tool_config, app_path, report_dir)
+
+    def scan_with_tool(
+        self,
+        tool_name: str,
+        tool_config: dict[str, Any],
+        app_path: Path,
+        report_dir: Path,
+    ) -> None:
+        if not tool_config.get("enabled", True):
+            print(f"[DISABLED] {tool_name}")
+            return
+
+        extension = tool_config.get("output_extension", "txt")
+        output_file = self.report_manager.build_output_file(
+            report_dir=report_dir,
+            app_path=app_path,
+            tool_name=tool_name,
+            extension=extension,
+        )
+
+        command_template = tool_config["command"]
+        command_builder = CommandBuilder(app_path, output_file)
+        command = command_builder.build(command_template)
+
+        print(f"[RUNNING] {tool_name}")
+        return_code = self.tool_runner.run(command, output_file)
+
+        if return_code == 0:
+            print(f"[OK] {tool_name} -> {output_file}")
+        else:
+            print(f"[DONE WITH ISSUES] {tool_name} -> {output_file}")
+
+
+class ArgumentParser:
+    def build(self) -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(
+            description="Python Application Scan Bot"
+        )
+
+        parser.add_argument(
+            "--app",
+            help="Single Python application file or folder path to scan",
+        )
+
+        parser.add_argument(
+            "--file",
+            help="Text file containing application paths, one per line",
+        )
+
+        parser.add_argument(
+            "--output-dir",
+            default="scan_reports",
+            help="Main output directory for all scan reports",
+        )
+
+        parser.add_argument(
+            "--config",
+            default="scan_commands.yaml",
+            help="YAML config file that contains scan commands",
+        )
+
+        return parser
+
+
+class Application:
+    def __init__(self):
+        self.parser = ArgumentParser().build()
+
+    def run(self) -> None:
+        args = self.parser.parse_args()
+
+        config = ConfigLoader(args.config).load()
+
+        resolver = ApplicationResolver(
+            single_app=args.app,
+            app_file=args.file,
+        )
+
+        applications = resolver.get_applications()
+
+        bot = ScanBot(
+            config=config,
+            output_main_dir=args.output_dir,
+        )
+
+        for app_path in applications:
+            bot.scan_application(app_path)
+
+
+if __name__ == "__main__":
+    try:
+        Application().run()
+    except Exception as exc:
+        print(f"[ERROR] {exc}")
+        sys.exit(1)
+
+
+=============================
+Running Examples
+=============================
+
+python scan_bot.py --app /path/to/my_app --output-dir /path/to/reports
+
+Scan one Python file:
+
+python scan_bot.py --app /path/to/my_script.py --output-dir /path/to/reports
+
+Scan many applications from a file:
+
+python scan_bot.py --file applications.txt --output-dir /path/to/reports
+
+Example applications.txt:
+
+/path/to/app1
+/path/to/app2
+/path/to/app3/main.py
+
+The output will look like:
+
+reports/
+└── my_app_scan_report/
+    ├── my_app_scalene.html
+    ├── my_app_ruff.json
+    ├── my_app_pylint.txt
+    ├── my_app_radon_cc.txt
+    ├── my_app_radon_mi.txt
+    ├── my_app_bandit.json
+    └── my_app_semgrep.json
