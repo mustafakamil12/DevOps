@@ -1,0 +1,30 @@
+def merge_retry_results(
+    df_report: pd.DataFrame,
+    df_retry_result: pd.DataFrame,
+    key_col: str = "node"
+) -> pd.DataFrame:
+    """
+    Fill only empty cells in df_report using values from df_retry_result.
+    """
+
+    final = df_report.copy()
+    retry = df_retry_result.copy()
+
+    final = final.set_index(key_col)
+    retry = retry.set_index(key_col)
+
+    for col in retry.columns:
+        if col not in final.columns:
+            final[col] = pd.NA
+
+        empty_mask = (
+            final[col].isna()
+            | final[col].astype(str).str.strip().eq("")
+        )
+
+        final.loc[retry.index, col] = final.loc[retry.index, col].where(
+            ~empty_mask.loc[retry.index],
+            retry[col]
+        )
+
+    return final.reset_index()
