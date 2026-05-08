@@ -169,14 +169,14 @@ class ToolRunner:
                 command,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout_seconds,
                 check=False,
             )
 
-            output_file.write_text(
-                self.format_output(command, result),
-                encoding="utf-8",
-            )
+            output = self.prepare_output(command, result, output_file)
+            output_file.write_text(output, encoding="utf-8")
 
             return result.returncode
 
@@ -194,7 +194,57 @@ class ToolRunner:
             )
             return 1
 
-    def format_output(self, command: list[str], result: subprocess.CompletedProcess) -> str:
+    def prepare_output(
+        self,
+        command: list[str],
+        result: subprocess.CompletedProcess,
+        output_file: Path,
+    ) -> str:
+        if output_file.suffix.lower() == ".json":
+            return self.prepare_json_output(command, result)
+
+        return self.format_text_output(command, result)
+
+    def prepare_json_output(
+        self,
+        command: list[str],
+        result: subprocess.CompletedProcess,
+    ) -> str:
+        raw_output = result.stdout.strip()
+
+        if not raw_output:
+            return json.dumps(
+                {
+                    "command": command,
+                    "return_code": result.returncode,
+                    "stdout": "",
+                    "stderr": result.stderr,
+                },
+                indent=4,
+            )
+
+        try:
+            parsed_json = json.loads(raw_output)
+            return json.dumps(parsed_json, indent=4, ensure_ascii=False)
+
+        except json.JSONDecodeError:
+            return json.dumps(
+                {
+                    "command": command,
+                    "return_code": result.returncode,
+                    "raw_stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "error": "Output was not valid JSON",
+                },
+                indent=4,
+                ensure_ascii=False,
+            )
+
+    def format_text_output(
+        self,
+        command: list[str],
+        result: subprocess.CompletedProcess,
+    ) -> str:
         return (
             f"Command:\n{' '.join(command)}\n\n"
             f"Return Code:\n{result.returncode}\n\n"
