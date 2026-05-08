@@ -1,0 +1,241 @@
+rules:
+  # =========================
+  # Security: Dangerous Code Execution
+  # =========================
+
+  - id: python.security.eval-used
+    pattern: eval(...)
+    message: Avoid eval(). It can execute arbitrary code.
+    severity: ERROR
+    languages: [python]
+
+  - id: python.security.exec-used
+    pattern: exec(...)
+    message: Avoid exec(). It can execute arbitrary code.
+    severity: ERROR
+    languages: [python]
+
+  - id: python.security.subprocess-shell-true
+    patterns:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+    message: Avoid shell=True in subprocess calls. It can lead to command injection.
+    severity: ERROR
+    languages: [python]
+
+  - id: python.security.os-system-used
+    pattern: os.system(...)
+    message: Avoid os.system(). Use subprocess with shell=False and argument lists.
+    severity: ERROR
+    languages: [python]
+
+  # =========================
+  # Security: Deserialization / YAML / Pickle
+  # =========================
+
+  - id: python.security.yaml-load-used
+    pattern: yaml.load(...)
+    message: Use yaml.safe_load() instead of yaml.load().
+    severity: ERROR
+    languages: [python]
+
+  - id: python.security.pickle-load-used
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+    message: Avoid pickle loading untrusted data.
+    severity: WARNING
+    languages: [python]
+
+  # =========================
+  # Security: SSL / HTTP
+  # =========================
+
+  - id: python.security.requests-verify-false
+    pattern: requests.$FUNC(..., verify=False, ...)
+    message: SSL certificate verification is disabled.
+    severity: ERROR
+    languages: [python]
+
+  - id: python.security.httpx-verify-false
+    pattern: httpx.$CLIENT(..., verify=False, ...)
+    message: SSL certificate verification is disabled in httpx.
+    severity: ERROR
+    languages: [python]
+
+  - id: python.reliability.requests-missing-timeout
+    patterns:
+      - pattern: requests.$FUNC(...)
+      - pattern-not: requests.$FUNC(..., timeout=..., ...)
+    message: requests call is missing timeout.
+    severity: WARNING
+    languages: [python]
+
+  - id: python.reliability.httpx-missing-timeout
+    patterns:
+      - pattern-either:
+          - pattern: httpx.get(...)
+          - pattern: httpx.post(...)
+          - pattern: httpx.put(...)
+          - pattern: httpx.delete(...)
+          - pattern: httpx.patch(...)
+          - pattern: httpx.request(...)
+      - pattern-not: httpx.$FUNC(..., timeout=..., ...)
+    message: httpx call is missing timeout.
+    severity: WARNING
+    languages: [python]
+
+  # =========================
+  # Security: Hardcoded Secrets
+  # =========================
+
+  - id: python.security.hardcoded-password
+    pattern-either:
+      - pattern: password = "..."
+      - pattern: passwd = "..."
+      - pattern: pwd = "..."
+      - pattern: secret = "..."
+      - pattern: token = "..."
+      - pattern: api_key = "..."
+    message: Possible hardcoded secret.
+    severity: WARNING
+    languages: [python]
+
+  # =========================
+  # SQL Safety
+  # =========================
+
+  - id: python.security.sql-string-format
+    pattern-either:
+      - pattern: cursor.execute("..." % ...)
+      - pattern: cursor.execute("...".format(...))
+      - pattern: cursor.execute(f"...")
+    message: Possible SQL injection risk. Use parameterized queries.
+    severity: ERROR
+    languages: [python]
+
+  - id: python.security.pyodbc-sql-fstring
+    pattern: $CURSOR.execute(f"...")
+    message: Avoid f-strings in SQL execution. Use parameterized queries.
+    severity: ERROR
+    languages: [python]
+
+  # =========================
+  # Exception Handling
+  # =========================
+
+  - id: python.quality.bare-except
+    pattern: |
+      try:
+        ...
+      except:
+        ...
+    message: Avoid bare except. Catch specific exception types.
+    severity: WARNING
+    languages: [python]
+
+  - id: python.quality.exception-with-pass
+    pattern: |
+      try:
+        ...
+      except $ERR:
+        pass
+    message: Avoid silently swallowing exceptions.
+    severity: WARNING
+    languages: [python]
+
+  # =========================
+  # Logging
+  # =========================
+
+  - id: python.logging.print-used
+    pattern: print(...)
+    message: Use logging instead of print in enterprise applications.
+    severity: INFO
+    languages: [python]
+
+  - id: python.logging.logging-fstring
+    pattern-either:
+      - pattern: logger.$LEVEL(f"...")
+      - pattern: logging.$LEVEL(f"...")
+    message: Prefer lazy logging with logger.info("value=%s", value) instead of f-strings.
+    severity: INFO
+    languages: [python]
+
+  - id: python.logging.exception-without-logger-exception
+    pattern: |
+      try:
+        ...
+      except $ERR as $E:
+        logger.error(...)
+    message: Consider logger.exception(...) inside except blocks to preserve traceback.
+    severity: INFO
+    languages: [python]
+
+  # =========================
+  # Async / Reliability
+  # =========================
+
+  - id: python.async.time-sleep-in-async
+    pattern: |
+      async def $FUNC(...):
+        ...
+        time.sleep(...)
+    message: Do not use time.sleep() inside async functions. Use await asyncio.sleep().
+    severity: ERROR
+    languages: [python]
+
+  - id: python.async.asyncio-create-task-not-awaited
+    pattern: asyncio.create_task(...)
+    message: Created asyncio task may not be awaited or tracked.
+    severity: WARNING
+    languages: [python]
+
+  - id: python.async.gather-without-return-exceptions
+    pattern: asyncio.gather(...)
+    message: Consider handling exceptions from asyncio.gather().
+    severity: INFO
+    languages: [python]
+
+  # =========================
+  # Pandas / DataFrame Quality
+  # =========================
+
+  - id: python.pandas.iterrows-used
+    pattern: $DF.iterrows()
+    message: Avoid iterrows() for large DataFrames. Prefer vectorization, itertuples(), or apply carefully.
+    severity: INFO
+    languages: [python]
+
+  - id: python.pandas.fillna-inplace-used
+    pattern: $DF.fillna(..., inplace=True, ...)
+    message: Avoid inplace=True in pandas pipelines. Prefer assignment for clarity and reliability.
+    severity: INFO
+    languages: [python]
+
+  - id: python.pandas-chained-assignment
+    pattern: $DF[$COL][$ROW] = $VALUE
+    message: Possible pandas chained assignment. Use .loc[row, col] instead.
+    severity: WARNING
+    languages: [python]
+
+  # =========================
+  # File Handling
+  # =========================
+
+  - id: python.files.open-without-context-manager
+    pattern: $F = open(...)
+    message: Use with open(...) as f to ensure files are closed safely.
+    severity: WARNING
+    languages: [python]
+
+  # =========================
+  # Debug / Development Leftovers
+  # =========================
+
+  - id: python.debug.breakpoint-leftover
+    pattern-either:
+      - pattern: breakpoint()
+      - pattern: pdb.set_trace()
+    message: Debug breakpoint found.
+    severity: WARNING
+    languages: [python]
